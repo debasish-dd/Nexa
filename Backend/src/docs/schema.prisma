@@ -1,0 +1,231 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Get a free hosted Postgres database in seconds: `npx create-db`
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum UserRole {
+  USER
+  SUPER_ADMIN
+  SUPER_MOD
+}
+
+enum GroupRole {
+  ADMIN
+  MOD
+  MEMBER
+}
+
+model RefreshSession {
+  id               String @id @default(uuid())
+  refreshTokenHash String @map("refresh_token_hash")
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  deviceType String?
+  deviceName String?
+  userAgent  String?
+  ipAddress  String?
+
+  expiresAt DateTime
+  revokedAt DateTime?
+
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @updatedAt
+
+  @@map("refresh_sessions")
+}
+
+model User {
+  id                       String           @id @default(uuid())
+  username                 String           @unique @db.VarChar(30)
+  email                    String           @unique
+  passwordHash             String           @map("password_hash")
+  role                     UserRole         @default(USER)
+  avatarUrl                String?          @map("avatar_url")
+  bio                      String?          @db.VarChar(280)
+  isVerified               Boolean          @default(false) @map("is_verified")
+  isBanned                 Boolean          @default(false) @map("is_banned")
+  createdAt                DateTime         @default(now()) @map("created_at")
+  updatedAt                DateTime         @updatedAt @map("updated_at")
+  sessions                 RefreshSession[]
+  refreshTokenExpiry       DateTime?        @map("refresh_token_expiry")
+  verificationToken        String?          @map("verification_token")
+  verificationTokenExpiry  DateTime?        @map("verification_token_expiry")
+  passwordResetToken       String?          @map("password_reset_token")
+  passwordResetTokenExpiry DateTime?        @map("password_reset_token_expiry")
+
+  groupMemberships GroupMember[]
+
+  reportsCreated Report[]
+
+  reportsReviewed Report[] @relation("ReviewedReports")
+
+  comments Comment[]
+
+  posts Post[]
+
+  @@map("users")
+}
+
+model Group {
+  id String @id @default(uuid())
+
+  // Basic Information
+  name        String  @db.VarChar(50)
+  slug        String  @unique @db.VarChar(60)
+  description String? @db.VarChar(500)
+
+  // Images
+  avatarUrl String? @map("avatar_url")
+  bannerUrl String? @map("banner_url")
+
+  // Ownership
+  ownerId String @map("owner_id")
+  owner   User   @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  // Visibility
+  isPrivate  Boolean @default(false) @map("is_private")
+  isArchived Boolean @default(false) @map("is_archived")
+
+  // Metadata
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  members GroupMember[]
+  posts   Post[]
+
+  @@index([ownerId])
+  @@map("groups")
+}
+
+model Post {
+  id String @id @default(uuid())
+
+  // Content
+  title   String? @db.VarChar(150)
+  content String  @db.Text
+
+  // Images
+  imageUrl String? @map("image_url")
+
+  // Author
+  authorId String @map("author_id")
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Group
+  groupId String @map("group_id")
+  group   Group  @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  // Status
+  isEdited  Boolean @default(false) @map("is_edited")
+  isPinned  Boolean @default(false) @map("is_pinned")
+  isLocked  Boolean @default(false) @map("is_locked")
+  isDeleted Boolean @default(false) @map("is_deleted")
+
+  // Timestamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  comments Comment[]
+  reports  Report[]
+
+  @@index([authorId])
+  @@index([groupId])
+  @@index([createdAt])
+  @@map("posts")
+}
+
+model Comment {
+  id String @id @default(uuid())
+
+  content String @db.Text
+
+  // Author
+  authorId String @map("author_id")
+  author   User   @relation(fields: [authorId], references: [id], onDelete: Cascade)
+
+  // Post
+  postId String @map("post_id")
+  post   Post   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  // Reply support
+  parentId String?   @map("parent_id")
+  parent   Comment?  @relation("CommentReplies", fields: [parentId], references: [id], onDelete: Cascade)
+  replies  Comment[] @relation("CommentReplies")
+
+  // Moderation
+  isEdited  Boolean @default(false) @map("is_edited")
+  isDeleted Boolean @default(false) @map("is_deleted")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  reports Report[]
+
+  @@index([postId])
+  @@index([authorId])
+  @@index([parentId])
+  @@map("comments")
+}
+
+model Report {
+  id String @id @default(uuid())
+
+  reason      ReportReason
+  description String?      @db.VarChar(500)
+
+  status ReportStatus @default(PENDING)
+
+  // Reporter
+  reporterId String @map("reporter_id")
+  reporter   User   @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+
+  // Target
+  postId String? @map("post_id")
+  post   Post?   @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  commentId String?  @map("comment_id")
+  comment   Comment? @relation(fields: [commentId], references: [id], onDelete: Cascade)
+
+  // Moderator action
+  reviewedById String? @map("reviewed_by_id")
+  reviewedBy   User?   @relation("ReviewedReports", fields: [reviewedById], references: [id])
+
+  reviewedAt    DateTime?
+  moderatorNote String?   @db.VarChar(500)
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([reporterId])
+  @@index([status])
+  @@index([postId])
+  @@index([commentId])
+  @@map("reports")
+}
+
+model GroupMember {
+  id       String    @id @default(uuid())
+  groupId  String    @map("group_id")
+  userId   String    @map("user_id")
+  role     GroupRole @default(MEMBER)
+  joinedAt DateTime  @default(now()) @map("joined_at")
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+  @@index([userId])
+  @@map("group_members")
+}
