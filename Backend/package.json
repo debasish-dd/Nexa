@@ -5,23 +5,29 @@
   "license": "ISC",
   "author": "",
   "type": "module",
-  "main": "index.js",
+  "main": "server.ts",
   "scripts": {
     "dev": "tsx watch src/server.ts",
     "migrate": "node-pg-migrate -j ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.9.1",
+    "argon2": "^0.45.1",
     "cookie-parser": "^1.4.7",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
+    "jsonwebtoken": "^9.0.3",
     "node-pg-migrate": "^9.0.0",
-    "pg": "^8.22.0"
+    "pg": "^8.22.0",
+    "ua-parser-js": "^2.0.10",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
+    "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^26.1.2",
     "@types/pg": "^8.20.3",
     "dotenv-cli": "^11.0.0",
