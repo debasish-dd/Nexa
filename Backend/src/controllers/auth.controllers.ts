@@ -13,10 +13,6 @@ import type { CookieOptions } from "express";
 export const userRegister = asyncHandler(async (req: Request, res: Response) => {
   const { username, email, password } = req.body;
 
-  if (!username || !email || !password) {
-    throw new ApiError(400, "username, email, and password are required");
-  }
-
   const passwordHash = await argon2.hash(password);
 
   const pool = getPool();
@@ -46,7 +42,7 @@ export const userRegister = asyncHandler(async (req: Request, res: Response) => 
 
   const cookieOptions: CookieOptions = {
     httpOnly: true,
-    maxAge: 60 * 60 * 1000,
+    maxAge: accessExpiresAt.getTime() - Date.now(),
     secure: process.env.NODE_ENV === "production",
     sameSite: "strict",
   };
