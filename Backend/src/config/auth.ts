@@ -1,9 +1,13 @@
+import "dotenv/config";
 
-export const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_SECRET;
-export const JWT_REFRESH_SECRET = process.env.JWT_REFRESH_SECRET;
+const { JWT_ACCESS_SECRET, JWT_REFRESH_SECRET } = process.env;
 
-if (!JWT_ACCESS_SECRET || !JWT_REFRESH_SECRET) {
-    throw new Error("Missing JWT secrets");
+if (!JWT_ACCESS_SECRET) {
+    throw new Error("JWT_ACCESS_SECRET environment variable is missing");
+}
+
+if (!JWT_REFRESH_SECRET) {
+    throw new Error("JWT_REFRESH_SECRET environment variable is missing");
 }
 
 export const AUTH_CONFIG = {

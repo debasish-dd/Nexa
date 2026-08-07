@@ -41,33 +41,33 @@ const escapeHtml = (str: string) =>
     "'": "&#39;",
   }[char] as string));
 
+
 export const sendVerificationEmail = async (
   to: string,
-  otp: string,
+  rawToken: string,
   name?: string
 ): Promise<void> => {
+  const verificationUrl = `${process.env.APP_URL}/verify-email?token=${encodeURIComponent(rawToken)}`;
   const greeting = name ? `Hi ${escapeHtml(name)},` : "Hi,";
 
   const html = `
     <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
       <h2 style="color: #111;">Verify your email</h2>
       <p>${greeting}</p>
-      <p>Welcome to ${APP_NAME}. Use the code below to verify your email address.</p>
-      <div style="font-size: 32px; font-weight: 700; letter-spacing: 8px; background: #f4f4f5; padding: 16px 24px; border-radius: 8px; text-align: center; margin: 20px 0; color: #111;">
-        ${otp}
-      </div>
+      <p>Welcome to ${APP_NAME}. Click below to verify your email and activate your account.</p>
+      <a href="${verificationUrl}"
+         style="display:inline-block; padding:12px 24px; background:#111; color:#fff; text-decoration:none; border-radius:6px; margin: 16px 0;">
+        Verify Email
+      </a>
       <p style="font-size: 13px; color: #666;">
-        This code expires in 10 minutes. Don't share it with anyone.
+        Or paste this into your browser:<br/>
+        <a href="${verificationUrl}">${verificationUrl}</a>
       </p>
       <p style="font-size: 13px; color: #999;">
-        If you didn't create a ${APP_NAME} account, ignore this email.
+        This link expires in 1 hour. If you didn't create a ${APP_NAME} account, ignore this email.
       </p>
     </div>
   `;
 
-  await sendEmail({
-    to,
-    subject: `Your ${APP_NAME} verification code`,
-    html,
-  });
+  await sendEmail({ to, subject: `Verify your email — ${APP_NAME}`, html });
 };
