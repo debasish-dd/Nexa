@@ -71,3 +71,33 @@ export const sendVerificationEmail = async (
 
   await sendEmail({ to, subject: `Verify your email — ${APP_NAME}`, html });
 };
+
+export const sendPasswordResetEmail = async (
+  to: string,
+  rawToken: string,
+  name?: string
+): Promise<void> => {
+  const resetUrl = `${process.env.APP_URL}/reset-password?token=${encodeURIComponent(rawToken)}`;
+  const greeting = name ? `Hi ${escapeHtml(name)},` : "Hi,";
+
+  const html = `
+    <div style="font-family: -apple-system, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px;">
+      <h2 style="color: #111;">Reset your password</h2>
+      <p>${greeting}</p>
+      <p>We received a request to reset your ${APP_NAME} password. Click below to choose a new one.</p>
+      <a href="${resetUrl}"
+         style="display:inline-block; padding:12px 24px; background:#111; color:#fff; text-decoration:none; border-radius:6px; margin: 16px 0;">
+        Reset Password
+      </a>
+      <p style="font-size: 13px; color: #666;">
+        Or paste this into your browser:<br/>
+        <a href="${resetUrl}">${resetUrl}</a>
+      </p>
+      <p style="font-size: 13px; color: #999;">
+        This link expires in 30 minutes. If you didn't request a password reset, you can safely ignore this email — your password won't be changed.
+      </p>
+    </div>
+  `;
+
+  await sendEmail({ to, subject: `Reset your password — ${APP_NAME}`, html });
+};

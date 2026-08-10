@@ -13,17 +13,19 @@ type RefreshTokenResponse = {
     refreshExpiresAt: Date;
 };
 
-interface AccessTokenPayload {
-    userId: number;
-    role: string;
+ interface AccessTokenPayload {
+  userId: string;
+  role: string;
+  
 }
 
-interface RefreshTokenPayload {
-    userId: number;
-    sessionId: string;
+export interface RefreshTokenPayload {
+  userId: string;
+  sessionId: string;
+  
 }
 export const generateAccessToken = (
-    userId: number,
+    userId: string,
     role: string
 ): AccessTokenResponse => {
     const token = jwt.sign(
@@ -37,7 +39,6 @@ export const generateAccessToken = (
         accessExpiresAt: new Date(Date.now() + AUTH_CONFIG.ACCESS_MS),
     };
 };
-
 export const verifyAccessToken = (
     token: string
 ): AccessTokenPayload => {
@@ -57,7 +58,7 @@ export const verifyAccessToken = (
         }
 
         return {
-            userId: decoded.userId as number,
+            userId: decoded.userId as string,
             role: decoded.role as string,
         };
     } catch {
@@ -66,7 +67,7 @@ export const verifyAccessToken = (
 };
 
 export const generateRefreshToken = (
-    userId: number,
+    userId: string,
     sessionId: string
 ): RefreshTokenResponse => {
     const payload: RefreshTokenPayload = {
@@ -87,7 +88,6 @@ export const generateRefreshToken = (
         refreshExpiresAt: new Date(Date.now() + AUTH_CONFIG.REFRESH_MS),
     };
 };
-
 export const verifyRefreshToken = (
     token: string
 ): RefreshTokenPayload => {
@@ -107,10 +107,11 @@ export const verifyRefreshToken = (
         }
 
         return {
-            userId: decoded.userId as number,
+            userId: decoded.userId as string,
             sessionId: decoded.sessionId as string,
         };
     } catch {
         throw new ApiError(401, "Invalid or expired refresh token");
     }
 };
+

@@ -8,7 +8,11 @@ import { randomBytes, randomUUID, createHash } from "crypto"
 import { generateAccessAndRefreshToken } from "../services/auth.service";
 import { UAParser } from "ua-parser-js";
 import type { CookieOptions } from "express";
-import { sendVerificationEmail } from "../services/email.service";
+import { sendPasswordResetEmail, sendVerificationEmail } from "../services/email.service";
+import crypto from "crypto";
+import jwt from 'jsonwebtoken';
+import type { AccessTokenPayload } from "../middleware/auth.middleawre";
+import type {RefreshTokenPayload } from "../services/jwt.service";
 
 const generateVerificationToken = () => {
   const rawToken = randomBytes(32).toString("hex");
@@ -232,5 +236,209 @@ export const userLogin = asyncHandler(async (req: Request, res: Response) => {
 });
 
 export const userLogout = asyncHandler(async (req: Request, res: Response) => {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+  };
 
+  const token = req.cookies?.accessToken;
+
+  if (token) {
+    try {
+      const payload = jwt.verify(
+        token,
+        process.env.JWT_ACCESS_SECRET!,
+        { ignoreExpiration: true }
+      ) as AccessTokenPayload;
+
+      const pool = getPool();
+      await pool.query(
+        `DELETE FROM refresh_sessions WHERE id = $1 AND user_id = $2`,
+        [payload.sessionId, payload.userId]
+      );
+    } catch {
+      // Ignore invalid or expired access tokens — nothing to clean up server-side.
+    }
+  }
+
+  res.clearCookie("accessToken", cookieOptions);
+  res.clearCookie("refreshToken", cookieOptions);
+
+  return res.status(200).json(new ApiResponse(200, "Logout successful"));
+});
+
+export const forgotPassword = asyncHandler(async (req: Request, res: Response) => {
+  const { identifier } = req.body;
+  if (!identifier) {
+    throw new ApiError(400, "Username or email is required");
+  }
+
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT id, email FROM users WHERE username = $1 OR email = $1`,
+    [identifier]
+  );
+  const user = result.rows[0];
+
+  const genericResponse = () =>
+    res
+      .status(200)
+      .json(
+        new ApiResponse(
+          200,
+          "If an account with that identifier exists, a reset link has been sent"
+        )
+      );
+
+  if (!user) {
+    return genericResponse();
+  }
+
+  const rawToken = crypto.randomBytes(32).toString("hex");
+  const tokenHash = crypto.createHash("sha256").update(rawToken).digest("hex");
+  const expiresAt = new Date(Date.now() + 30 * 60 * 1000);
+
+  await pool.query(
+    `UPDATE users
+     SET password_reset_token_hash = $1, password_reset_expires_at = $2
+     WHERE id = $3`,
+    [tokenHash, expiresAt, user.id]
+  );
+
+  await sendPasswordResetEmail(user.email, rawToken);
+
+  return genericResponse();
+});
+
+export const resetPassword = asyncHandler(async (req: Request, res: Response) => {
+  const { token, newPassword } = req.body;
+  if (!token || !newPassword) {
+    throw new ApiError(400, "Token and new password are required");
+  }
+
+  const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT id, password_reset_expires_at
+     FROM users
+     WHERE password_reset_token_hash = $1`,
+    [tokenHash]
+  );
+  const user = result.rows[0];
+
+  if (!user) {
+    throw new ApiError(400, "Invalid or expired reset token");
+  }
+
+  if (new Date(user.password_reset_expires_at) < new Date()) {
+    throw new ApiError(400, "Invalid or expired reset token");
+  }
+
+  const newPasswordHash = await argon2.hash(newPassword);
+
+  await pool.query(
+    `UPDATE users
+     SET password_hash = $1,
+         password_reset_token_hash = NULL,
+         password_reset_expires_at = NULL
+     WHERE id = $2`,
+    [newPasswordHash, user.id]
+  );
+
+  // Force logout everywhere — any existing session is now suspect
+  await pool.query(`DELETE FROM refresh_sessions WHERE user_id = $1`, [user.id]);
+
+  const cookieOptions = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+  };
+  res.clearCookie("accessToken", cookieOptions);
+  res.clearCookie("refreshToken", cookieOptions);
+
+  return res.status(200).json(new ApiResponse(200, "Password reset successful"));
+});
+
+export const refreshAccessToken = asyncHandler(async (req: Request, res: Response) => {
+  const cookieOptions = {
+    httpOnly: true,
+    secure: true,
+    sameSite: "lax" as const,
+  };
+
+  const incomingToken = req.cookies?.refreshToken;
+
+  if (!incomingToken) {
+    throw new ApiError(401, "Refresh token missing");
+  }
+
+  let payload: RefreshTokenPayload;
+  try {
+    payload = jwt.verify(
+      incomingToken,
+      process.env.JWT_REFRESH_SECRET!
+    ) as RefreshTokenPayload;
+  } catch {
+    res.clearCookie("accessToken", cookieOptions);
+    res.clearCookie("refreshToken", cookieOptions);
+    throw new ApiError(401, "Invalid or expired refresh token");
+  }
+
+  const pool = getPool();
+  const result = await pool.query(
+    `SELECT rs.id, rs.user_id, rs.refresh_token_hash, rs.expires_at, u.role
+     FROM refresh_sessions rs
+     JOIN users u ON u.id = rs.user_id
+     WHERE rs.id = $1`,
+    [payload.sessionId]
+  );
+  const session = result.rows[0];
+
+  if (!session) {
+    res.clearCookie("accessToken", cookieOptions);
+    res.clearCookie("refreshToken", cookieOptions);
+    throw new ApiError(401, "Session not found, please log in again");
+  }
+
+  const isValid = await argon2.verify(session.refresh_token_hash, incomingToken);
+
+  if (!isValid) {
+    // Doesn't match what's on record for this session — it was already
+    // rotated out. Someone is replaying an old refresh token.
+    await pool.query(`DELETE FROM refresh_sessions WHERE user_id = $1`, [session.user_id]);
+    res.clearCookie("accessToken", cookieOptions);
+    res.clearCookie("refreshToken", cookieOptions);
+    throw new ApiError(401, "Session revoked due to token reuse, please log in again");
+  }
+
+  if (new Date(session.expires_at) < new Date()) {
+    await pool.query(`DELETE FROM refresh_sessions WHERE id = $1`, [session.id]);
+    res.clearCookie("accessToken", cookieOptions);
+    res.clearCookie("refreshToken", cookieOptions);
+    throw new ApiError(401, "Refresh token expired, please log in again");
+  }
+
+  const {
+    accessToken, accessExpiresAt, refreshToken, refreshExpiresAt, hashedRefreshToken,
+  } = await generateAccessAndRefreshToken(session.user_id, session.role, session.id);
+
+  await pool.query(
+    `UPDATE refresh_sessions
+     SET refresh_token_hash = $1, expires_at = $2
+     WHERE id = $3`,
+    [hashedRefreshToken, refreshExpiresAt, session.id]
+  );
+
+  res.cookie("accessToken", accessToken, {
+    ...cookieOptions,
+    maxAge: accessExpiresAt.getTime() - Date.now(),
+  });
+  res.cookie("refreshToken", refreshToken, {
+    ...cookieOptions,
+    maxAge: refreshExpiresAt.getTime() - Date.now(),
+  });
+
+  return res.status(200).json(new ApiResponse(200, "Access token refreshed"));
 });

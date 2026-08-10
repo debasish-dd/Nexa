@@ -2,7 +2,7 @@ import argon2 from "argon2";
 import { generateAccessToken, generateRefreshToken } from "./jwt.service";
 
 export const generateAccessAndRefreshToken = async (
-    userId: number,
+    userId: string,
     role: string,
     sessionId: string
 ) => {

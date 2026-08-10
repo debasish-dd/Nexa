@@ -4,10 +4,12 @@ import asyncHandler from "../utils/async-handler";
 import { ApiError } from "../utils/api-error";
 import { getPool } from "../db/pool";
 
-interface AccessTokenPayload {
-    userId: string;
-    role: string;
-    sessionId: string;
+export interface AccessTokenPayload {
+  userId: string;
+  role: string;
+  sessionId: string;
+  iat: number;
+  exp: number;
 }
 
 declare global {
