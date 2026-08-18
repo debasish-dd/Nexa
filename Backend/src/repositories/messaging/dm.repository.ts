@@ -1,4 +1,7 @@
+import type { PoolClient } from "pg";
 import { getPool } from "../../db/pool";
+
+const pool = getPool();
 
 export interface DMPair {
     id: string;
@@ -11,12 +14,11 @@ export const findDMPair = async (
     userAId: string,
     userBId: string,
 ): Promise<DMPair | null> => {
-
     const [user1Id, user2Id] =
         userAId < userBId
             ? [userAId, userBId]
             : [userBId, userAId];
-    const pool = getPool();
+
     const result = await pool.query<DMPair>(
         `
         SELECT
@@ -33,13 +35,13 @@ export const findDMPair = async (
     );
 
     return result.rows[0] ?? null;
-
-}
+};
 
 export const createDMPair = async (
     userAId: string,
     userBId: string,
     conversationId: string,
+    client?: PoolClient,
 ): Promise<DMPair> => {
     if (userAId === userBId) {
         throw new Error("Users cannot create a DM with themselves");
@@ -49,8 +51,10 @@ export const createDMPair = async (
         userAId < userBId
             ? [userAId, userBId]
             : [userBId, userAId];
-    const pool = getPool();
-    const result = await pool.query<DMPair>(
+
+    const db = client ?? pool;
+
+    const result = await db.query<DMPair>(
         `
         INSERT INTO dm_pairs (
             user1_id,
@@ -75,10 +79,10 @@ export const createDMPair = async (
 
     return dmPair;
 };
+
 export const findDMPairByConversationId = async (
     conversationId: string,
 ): Promise<DMPair | null> => {
-    const pool = getPool();
     const result = await pool.query<DMPair>(
         `
         SELECT
@@ -99,7 +103,6 @@ export const findDMPairByConversationId = async (
 export const deleteDMPair = async (
     dmPairId: string,
 ): Promise<boolean> => {
-    const pool = getPool();
     const result = await pool.query(
         `
         DELETE FROM dm_pairs

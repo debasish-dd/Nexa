@@ -1,171 +1,147 @@
 import { getPool } from "../../db/pool";
 
-const pool= getPool();
+const pool = getPool();
 
-export type ParticipantRole = "member" | "mod" | "admin";
-
-export interface ConversationParticipant {
+export interface Message {
     id: string;
+    createdAt: Date;
+    editedAt: Date | null;
     conversationId: string;
-    userId: string;
-    joinedAt: Date;
-    role: ParticipantRole;
-    lastReadMessageId: string | null;
+    deletedAt: Date | null;
+    content: string;
+    senderId: string;
 }
 
-export const addParticipant = async (
+export const createMessage = async (
     conversationId: string,
-    userId: string,
-    role: ParticipantRole = "member",
-): Promise<ConversationParticipant> => {
-
-    const result = await pool.query(`
-        INSERT INTO conversation_participants (conversation_id, user_id, role)
+    senderId: string,
+    content: string,
+): Promise<Message> => {
+    const result = await pool.query<Message>(
+        `
+        INSERT INTO messages (
+            conversation_id,
+            sender_id,
+            content
+        )
         VALUES ($1, $2, $3)
         RETURNING
             id,
+            created_at AS "createdAt",
+            edited_at AS "editedAt",
             conversation_id AS "conversationId",
-            user_id AS "userId",
-            joined_at AS "joinedAt",
-            role,
-            last_read_message_id AS "lastReadMessageId"
-    `, [conversationId, userId, role]);
-
-    const participant = result.rows[0];
-
-    if (!participant) {
-        throw new Error("Failed to add participant");
-    }
-
-    return participant;
-}
-
-export const isParticipant = async (
-    conversationId: string,
-    userId: string,
-): Promise<boolean> => {
-    const result = await pool.query(
-        `
-        SELECT 1
-        FROM conversation_participants
-        WHERE conversation_id = $1
-          AND user_id = $2
-        LIMIT 1
+            deleted_at AS "deletedAt",
+            content,
+            sender_id AS "senderId"
         `,
-        [conversationId, userId],
+        [conversationId, senderId, content],
     );
 
-    return result.rowCount === 1;
+    const message = result.rows[0];
+
+    if (!message) {
+        throw new Error("Failed to create message");
+    }
+
+    return message;
 };
 
-export const findParticipant = async (
-    conversationId: string,
-    userId: string,
-): Promise<ConversationParticipant | null> => {
-    const result = await pool.query<ConversationParticipant>(
+export const findMessageById = async (
+    messageId: string,
+): Promise<Message | null> => {
+    const result = await pool.query<Message>(
         `
         SELECT
             id,
+            created_at AS "createdAt",
+            edited_at AS "editedAt",
             conversation_id AS "conversationId",
-            user_id AS "userId",
-            joined_at AS "joinedAt",
-            role,
-            last_read_message_id AS "lastReadMessageId"
-        FROM conversation_participants
-        WHERE conversation_id = $1
-          AND user_id = $2
+            deleted_at AS "deletedAt",
+            content,
+            sender_id AS "senderId"
+        FROM messages
+        WHERE id = $1
         LIMIT 1
         `,
-        [conversationId, userId],
+        [messageId],
     );
 
     return result.rows[0] ?? null;
 };
 
-export const getParticipants = async (
+export const getMessages = async (
     conversationId: string,
-): Promise<ConversationParticipant[]> => {
-    const result = await pool.query<ConversationParticipant>(
+    limit: number = 50,
+): Promise<Message[]> => {
+    const result = await pool.query<Message>(
         `
         SELECT
             id,
+            created_at AS "createdAt",
+            edited_at AS "editedAt",
             conversation_id AS "conversationId",
-            user_id AS "userId",
-            joined_at AS "joinedAt",
-            role,
-            last_read_message_id AS "lastReadMessageId"
-        FROM conversation_participants
+            deleted_at AS "deletedAt",
+            content,
+            sender_id AS "senderId"
+        FROM messages
         WHERE conversation_id = $1
-        ORDER BY joined_at ASC
+          AND deleted_at IS NULL
+        ORDER BY created_at DESC
+        LIMIT $2
         `,
-        [conversationId],
+        [conversationId, limit],
     );
 
     return result.rows;
 };
 
-export const updateParticipantRole = async (
-    conversationId: string,
-    userId: string,
-    role: ParticipantRole,
-): Promise<ConversationParticipant | null> => {
-    const result = await pool.query<ConversationParticipant>(
+export const editMessage = async (
+    messageId: string,
+    content: string,
+): Promise<Message | null> => {
+    const result = await pool.query<Message>(
         `
-        UPDATE conversation_participants
-        SET role = $3
-        WHERE conversation_id = $1
-          AND user_id = $2
+        UPDATE messages
+        SET
+            content = $2,
+            edited_at = current_timestamp
+        WHERE id = $1
+          AND deleted_at IS NULL
         RETURNING
             id,
+            created_at AS "createdAt",
+            edited_at AS "editedAt",
             conversation_id AS "conversationId",
-            user_id AS "userId",
-            joined_at AS "joinedAt",
-            role,
-            last_read_message_id AS "lastReadMessageId"
+            deleted_at AS "deletedAt",
+            content,
+            sender_id AS "senderId"
         `,
-        [conversationId, userId, role],
+        [messageId, content],
     );
 
     return result.rows[0] ?? null;
 };
 
-export const updateLastReadMessage = async (
-    conversationId: string,
-    userId: string,
-    messageId: string | null,
-): Promise<ConversationParticipant | null> => {
-    const result = await pool.query<ConversationParticipant>(
+export const softDeleteMessage = async (
+    messageId: string,
+): Promise<Message | null> => {
+    const result = await pool.query<Message>(
         `
-        UPDATE conversation_participants
-        SET last_read_message_id = $3
-        WHERE conversation_id = $1
-          AND user_id = $2
+        UPDATE messages
+        SET deleted_at = current_timestamp
+        WHERE id = $1
+          AND deleted_at IS NULL
         RETURNING
             id,
+            created_at AS "createdAt",
+            edited_at AS "editedAt",
             conversation_id AS "conversationId",
-            user_id AS "userId",
-            joined_at AS "joinedAt",
-            role,
-            last_read_message_id AS "lastReadMessageId"
+            deleted_at AS "deletedAt",
+            content,
+            sender_id AS "senderId"
         `,
-        [conversationId, userId, messageId],
+        [messageId],
     );
 
     return result.rows[0] ?? null;
-};
-
-export const removeParticipant = async (
-    conversationId: string,
-    userId: string,
-): Promise<boolean> => {
-    const result = await pool.query(
-        `
-        DELETE FROM conversation_participants
-        WHERE conversation_id = $1
-          AND user_id = $2
-        `,
-        [conversationId, userId],
-    );
-
-    return result.rowCount === 1;
 };

@@ -1,4 +1,7 @@
+import type { PoolClient } from "pg";
 import { getPool } from "../../db/pool";
+
+const pool = getPool();
 
 export type ConversationType = "dm" | "gc";
 
@@ -8,19 +11,24 @@ export interface Conversation {
     type: ConversationType;
 }
 
-
 export const createConversation = async (
     type: ConversationType,
+    client?: PoolClient,
 ): Promise<Conversation> => {
-    const pool = getPool();
-    const result = await pool.query(`
+    const db = client ?? pool;
+
+    const result = await db.query<Conversation>(
+        `
         INSERT INTO conversations (type)
+        VALUES ($1)
         RETURNING
             id,
             created_at AS "createdAt",
             type
+        `,
+        [type],
+    );
 
-        `, [type]);
     const conversation = result.rows[0];
 
     if (!conversation) {
@@ -30,16 +38,18 @@ export const createConversation = async (
     return conversation;
 };
 
-
 export const findConversationById = async (
     conversationId: string,
 ): Promise<Conversation | null> => {
-    const pool = getPool();
     const result = await pool.query<Conversation>(
         `
-        SELECT id, type, created_at, updated_at
+        SELECT
+            id,
+            created_at AS "createdAt",
+            type
         FROM conversations
         WHERE id = $1
+        LIMIT 1
         `,
         [conversationId],
     );
@@ -47,11 +57,9 @@ export const findConversationById = async (
     return result.rows[0] ?? null;
 };
 
-
 export const getConversationType = async (
     conversationId: string,
 ): Promise<ConversationType | null> => {
-    const pool = getPool();
     const result = await pool.query<{ type: ConversationType }>(
         `
         SELECT type
@@ -65,11 +73,9 @@ export const getConversationType = async (
     return result.rows[0]?.type ?? null;
 };
 
-
 export const deleteConversation = async (
     conversationId: string,
 ): Promise<boolean> => {
-    const pool = getPool();
     const result = await pool.query(
         `
         DELETE FROM conversations
