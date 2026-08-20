@@ -48,7 +48,7 @@ export const getDM = async (
     if (!existingDm) {
         return null;
     }
-    const convo = findConversationById(existingDm.conversationId)
+    const convo = await findConversationById(existingDm.conversationId)
 
     if (!convo) {
         throw new Error("DM conversation not found");
