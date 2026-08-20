@@ -1,16 +1,19 @@
 import { getPool } from "../../db/pool";
 import {
     createConversation,
+    deleteConversation,
     findConversationById,
 } from "../../repositories/messaging/conversation.repository";
 import {
     createDMPair,
     findDMPair,
+    findDMPairByConversationId,
 } from "../../repositories/messaging/dm.repository";
 import {
     addParticipant,
     getParticipants,
 } from "../../repositories/messaging/participant.repository";
+import { ApiError } from "../../utils/api-error";
 
 const pool = getPool();
 
@@ -41,17 +44,30 @@ export const getDM = async (
     userBId: string,
 ): Promise<DMDetails | null> => {
     if (userAId === userBId) {
-        throw new Error("Users cannot create a DM with themselves");
+        throw new ApiError(
+            400,
+            "Users cannot create a DM with themselves",
+        );
     }
 
-    const existingDm = await findDMPair(userAId, userBId);
+    const existingDm = await findDMPair(
+        userAId,
+        userBId,
+    );
+
     if (!existingDm) {
         return null;
     }
-    const convo = await findConversationById(existingDm.conversationId)
+
+    const convo = await findConversationById(
+        existingDm.conversationId,
+    );
 
     if (!convo) {
-        throw new Error("DM conversation not found");
+        throw new ApiError(
+            404,
+            "DM conversation not found",
+        );
     }
 
     const participants = await getParticipants(
@@ -68,22 +84,25 @@ export const getDM = async (
             role: participant.role,
             joinedAt: participant.joinedAt,
         })),
-
-    }
-
+    };
 };
-
 
 export const createDM = async (
     userAId: string,
     userBId: string,
 ): Promise<DMConversationResult> => {
     if (userAId === userBId) {
-        throw new Error("Users cannot create a DM with themselves");
+        throw new ApiError(
+            400,
+            "Users cannot create a DM with themselves",
+        );
     }
 
     // Fast path: DM already exists.
-    const existingDM = await findDMPair(userAId, userBId);
+    const existingDM = await findDMPair(
+        userAId,
+        userBId,
+    );
 
     if (existingDM) {
         return {
@@ -104,13 +123,11 @@ export const createDM = async (
     try {
         await client.query("BEGIN");
 
-        // Create conversation using SAME transaction client.
         const conversation = await createConversation(
             "dm",
             client,
         );
 
-        // Create DM pair using SAME transaction client.
         const dmPair = await createDMPair(
             user1Id,
             user2Id,
@@ -118,14 +135,13 @@ export const createDM = async (
             client,
         );
 
-        // Add user 1 using SAME transaction client.
         await addParticipant(
             conversation.id,
             user1Id,
             "member",
             client,
         );
-         // Add user 2 using SAME transaction client.
+
         await addParticipant(
             conversation.id,
             user2Id,
@@ -146,5 +162,40 @@ export const createDM = async (
         throw error;
     } finally {
         client.release();
+    }
+};
+
+export const deleteDM = async (
+    conversationId: string,
+    userId: string,
+): Promise<void> => {
+    const dmPair = await findDMPairByConversationId(
+        conversationId,
+    );
+
+    if (!dmPair) {
+        throw new ApiError(404, "DM conversation not found");
+    }
+
+    const isParticipant =
+        dmPair.user1Id === userId ||
+        dmPair.user2Id === userId;
+
+    if (!isParticipant) {
+        throw new ApiError(
+            403,
+            "You are not a participant in this conversation",
+        );
+    }
+
+    const deleted = await deleteConversation(
+        conversationId,
+    );
+
+    if (!deleted) {
+        throw new ApiError(
+            404,
+            "DM conversation not found",
+        );
     }
 };
