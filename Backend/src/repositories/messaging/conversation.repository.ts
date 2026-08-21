@@ -1,8 +1,10 @@
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
+
 import { getPool } from "../../db/pool";
 
 const pool = getPool();
 
+type QueryExecutor = Pool | PoolClient;
 export type ConversationType = "dm" | "gc";
 
 export interface Conversation {
@@ -75,11 +77,13 @@ export const getConversationType = async (
 
 export const deleteConversation = async (
     conversationId: string,
+    executor: QueryExecutor = pool,
 ): Promise<boolean> => {
-    const result = await pool.query(
+    const result = await executor.query(
         `
         DELETE FROM conversations
         WHERE id = $1
+        RETURNING id
         `,
         [conversationId],
     );

@@ -1,8 +1,9 @@
+import type { PoolClient } from "pg";
+
 import { getPool } from "../../db/pool";
 import {
     createConversation,
     deleteConversation,
-    findConversationById,
 } from "../../repositories/messaging/conversation.repository";
 import {
     createDMPair,
@@ -36,9 +37,44 @@ export interface DMDetails {
     }[];
 }
 
+interface PostgresError extends Error {
+    code?: string;
+    constraint?: string;
+}
 
-//   Find an existing DM between two users.
+const isPostgresError = (
+    error: unknown,
+): error is PostgresError => {
+    return (
+        error instanceof Error &&
+        "code" in error
+    );
+};
 
+const normalizeUserPair = (
+    userAId: string,
+    userBId: string,
+): [string, string] => {
+    return userAId < userBId
+        ? [userAId, userBId]
+        : [userBId, userAId];
+};
+
+const toDMConversationResult = (dmPair: {
+    id: string;
+    conversationId: string;
+    user1Id: string;
+    user2Id: string;
+}): DMConversationResult => {
+    return {
+        conversationId: dmPair.conversationId,
+        dmPairId: dmPair.id,
+        user1Id: dmPair.user1Id,
+        user2Id: dmPair.user2Id,
+    };
+};
+
+// Find an existing DM between two users.
 export const getDM = async (
     userAId: string,
     userBId: string,
@@ -50,40 +86,36 @@ export const getDM = async (
         );
     }
 
-    const existingDm = await findDMPair(
+    const [user1Id, user2Id] = normalizeUserPair(
         userAId,
         userBId,
     );
 
-    if (!existingDm) {
+    const dmPair = await findDMPair(
+        user1Id,
+        user2Id,
+    );
+
+    if (!dmPair) {
         return null;
     }
 
-    const convo = await findConversationById(
-        existingDm.conversationId,
-    );
-
-    if (!convo) {
-        throw new ApiError(
-            404,
-            "DM conversation not found",
-        );
-    }
-
     const participants = await getParticipants(
-        existingDm.conversationId,
+        dmPair.conversationId,
     );
 
     return {
-        conversationId: existingDm.conversationId,
-        dmPairId: existingDm.id,
-        user1Id: existingDm.user1Id,
-        user2Id: existingDm.user2Id,
-        participants: participants.map((participant) => ({
-            userId: participant.userId,
-            role: participant.role,
-            joinedAt: participant.joinedAt,
-        })),
+        conversationId: dmPair.conversationId,
+        dmPairId: dmPair.id,
+        user1Id: dmPair.user1Id,
+        user2Id: dmPair.user2Id,
+        participants: participants.map(
+            (participant) => ({
+                userId: participant.userId,
+                role: participant.role,
+                joinedAt: participant.joinedAt,
+            }),
+        ),
     };
 };
 
@@ -98,25 +130,20 @@ export const createDM = async (
         );
     }
 
-    // Fast path: DM already exists.
-    const existingDM = await findDMPair(
+    const [user1Id, user2Id] = normalizeUserPair(
         userAId,
         userBId,
     );
 
-    if (existingDM) {
-        return {
-            conversationId: existingDM.conversationId,
-            dmPairId: existingDM.id,
-            user1Id: existingDM.user1Id,
-            user2Id: existingDM.user2Id,
-        };
-    }
+    // Fast path.
+    const existingDM = await findDMPair(
+        user1Id,
+        user2Id,
+    );
 
-    const [user1Id, user2Id] =
-        userAId < userBId
-            ? [userAId, userBId]
-            : [userBId, userAId];
+    if (existingDM) {
+        return toDMConversationResult(existingDM);
+    }
 
     const client = await pool.connect();
 
@@ -151,14 +178,38 @@ export const createDM = async (
 
         await client.query("COMMIT");
 
-        return {
-            conversationId: conversation.id,
-            dmPairId: dmPair.id,
-            user1Id: dmPair.user1Id,
-            user2Id: dmPair.user2Id,
-        };
+        return toDMConversationResult(dmPair);
     } catch (error) {
         await client.query("ROLLBACK");
+
+        /*
+         * Two requests can both pass the fast-path lookup.
+         *
+         * The DB constraint:
+         * UNIQUE (user1_id, user2_id)
+         *
+         * guarantees that only one request can create the pair.
+         *
+         * If this request loses that race, fetch and return
+         * the DM created by the winning transaction.
+         */
+        if (
+            isPostgresError(error) &&
+            error.code === "23505" &&
+            error.constraint === "dm_pairs_unique_users"
+        ) {
+            const existingDM = await findDMPair(
+                user1Id,
+                user2Id,
+            );
+
+            if (existingDM) {
+                return toDMConversationResult(
+                    existingDM,
+                );
+            }
+        }
+
         throw error;
     } finally {
         client.release();
@@ -169,33 +220,57 @@ export const deleteDM = async (
     conversationId: string,
     userId: string,
 ): Promise<void> => {
-    const dmPair = await findDMPairByConversationId(
-        conversationId,
-    );
+    const client = await pool.connect();
 
-    if (!dmPair) {
-        throw new ApiError(404, "DM conversation not found");
-    }
+    try {
+        await client.query("BEGIN");
 
-    const isParticipant =
-        dmPair.user1Id === userId ||
-        dmPair.user2Id === userId;
+        /*
+         * Lock the DM pair while we verify authorization
+         * and perform the deletion.
+         */
+        const dmPair =
+            await findDMPairByConversationId(
+                conversationId,
+                client,
+                true,
+            );
 
-    if (!isParticipant) {
-        throw new ApiError(
-            403,
-            "You are not a participant in this conversation",
+        if (!dmPair) {
+            throw new ApiError(
+                404,
+                "DM conversation not found",
+            );
+        }
+
+        const isParticipant =
+            dmPair.user1Id === userId ||
+            dmPair.user2Id === userId;
+
+        if (!isParticipant) {
+            throw new ApiError(
+                403,
+                "You are not a participant in this conversation",
+            );
+        }
+
+        const deleted = await deleteConversation(
+            conversationId,
+            client,
         );
-    }
 
-    const deleted = await deleteConversation(
-        conversationId,
-    );
+        if (!deleted) {
+            throw new ApiError(
+                404,
+                "DM conversation not found",
+            );
+        }
 
-    if (!deleted) {
-        throw new ApiError(
-            404,
-            "DM conversation not found",
-        );
+        await client.query("COMMIT");
+    } catch (error) {
+        await client.query("ROLLBACK");
+        throw error;
+    } finally {
+        client.release();
     }
 };

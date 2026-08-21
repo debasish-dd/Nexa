@@ -1,7 +1,9 @@
-import type { PoolClient } from "pg";
+import type {Pool, PoolClient } from "pg";
 import { getPool } from "../../db/pool";
 
 const pool = getPool();
+
+type QueryExecutor = Pool | PoolClient;
 
 export interface DMPair {
     id: string;
@@ -82,17 +84,20 @@ export const createDMPair = async (
 
 export const findDMPairByConversationId = async (
     conversationId: string,
+    executor: QueryExecutor = pool,
+    forUpdate = false,
 ): Promise<DMPair | null> => {
-    const result = await pool.query<DMPair>(
+    const result = await executor.query<DMPair>(
         `
         SELECT
             id,
             user1_id AS "user1Id",
             user2_id AS "user2Id",
-            conversation_id AS "conversationId"
+            conversation_id AS "conversationId",
+            created_at AS "createdAt"
         FROM dm_pairs
         WHERE conversation_id = $1
-        LIMIT 1
+        ${forUpdate ? "FOR UPDATE" : ""}
         `,
         [conversationId],
     );

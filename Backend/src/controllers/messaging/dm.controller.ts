@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import asyncHandler from "../../utils/async-handler";
 import * as dmService from "../../services/messaging/dm.service";
 import { ApiError } from "../../utils/api-error";
+import { ApiResponse } from "../../utils/api-response";
 
 export const createDM = asyncHandler(
     async (req: Request, res: Response) => {
@@ -21,12 +22,11 @@ export const createDM = asyncHandler(
             otherUserId,
         );
 
-        res.status(201).json({
-            success: true,
-            message: "DM conversation created successfully",
-            errors: [],
-            data: dm,
-        });
+        res.status(201).json(new ApiResponse(
+            201,
+            "DM conversation created successfully",
+            dm
+        ));
     },
 );
 
@@ -38,7 +38,7 @@ export const getDM = asyncHandler(
         if (!otherUserId) {
             throw new ApiError(
                 400,
-                "User ID is required",
+                "Other user ID is required",
             );
         }
 
@@ -54,12 +54,11 @@ export const getDM = asyncHandler(
             );
         }
 
-        res.status(200).json({
-            success: true,
-            message: "DM conversation fetched successfully",
-            errors: [],
-            data: dm,
-        });
+        res.status(200).json(new ApiResponse(
+            200,
+            "DM conversation retrieved successfully",
+            dm,
+        ));
     },
 );
 
@@ -80,11 +79,10 @@ export const deleteDM = asyncHandler(
             userId,
         );
 
-        res.status(200).json({
-            success: true,
-            message: "DM conversation deleted successfully",
-            errors: [],
-            data: null,
-        });
+        res.status(200).json(new ApiResponse(
+            200,
+            "DM conversation deleted successfully",
+            null
+        ));
     },
 );

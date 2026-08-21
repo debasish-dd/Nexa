@@ -22,6 +22,7 @@ export const addParticipant = async (
     if (existingParticipant) {
         throw new Error("User is already a participant");
     }
+    
 
     return addParticipantRepository(
         conversationId,

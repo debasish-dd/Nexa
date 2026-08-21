@@ -3,6 +3,7 @@ import type { Request, Response } from "express";
 import asyncHandler from "../../utils/async-handler";
 import * as groupService from "../../services/messaging/group.service";
 import { ApiError } from "../../utils/api-error";
+import { ApiResponse } from "../../utils/api-response";
 
 export const createGroup = asyncHandler(
     async (req: Request, res: Response) => {
@@ -28,12 +29,11 @@ export const createGroup = asyncHandler(
             groupProfile,
         });
 
-        res.status(201).json({
-            success: true,
-            message: "Group created successfully",
-            errors: [],
-            data: group,
-        });
+        res.status(201).json(new ApiResponse(
+            201,
+            "Group created successfully",
+            group
+        ));
     },
 );
 
@@ -59,12 +59,11 @@ export const getGroup = asyncHandler(
             );
         }
 
-        res.status(200).json({
-            success: true,
-            message: "Group fetched successfully",
-            errors: [],
-            data: group,
-        });
+        res.status(200).json(new ApiResponse(
+            200,
+            "Group fetched successfully",
+            group
+        ));
     },
 );
 
@@ -101,12 +100,11 @@ export const updateGroup = asyncHandler(
             );
         }
 
-        res.status(200).json({
-            success: true,
-            message: "Group updated successfully",
-            errors: [],
-            data: group,
-        });
+        res.status(200).json(new ApiResponse(
+            200,
+            "Group updated successfully",
+            group
+        ));
     },
 );
 
@@ -123,11 +121,10 @@ export const deleteGroup = asyncHandler(
 
         await groupService.deleteGroup(groupId);
 
-        res.status(200).json({
-            success: true,
-            message: "Group deleted successfully",
-            errors: [],
-            data: null,
-        });
+        res.status(200).json(new ApiResponse(
+            200,
+            "Group deleted successfully",
+            null
+        ));
     },
 );
