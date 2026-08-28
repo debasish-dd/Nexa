@@ -178,3 +178,19 @@ export const removeParticipant = async (
 
     return result.rowCount === 1;
 };
+
+export const getConversationIdsForUser = async (
+    userId: string,
+): Promise<string[]> => {
+    const result = await pool.query<{ conversation_id: string }>(
+        `
+        SELECT conversation_id
+        FROM conversation_participants
+        WHERE user_id = $1
+        `,
+        [userId],
+    );
+
+    return result.rows.map(row => row.conversation_id);
+
+}

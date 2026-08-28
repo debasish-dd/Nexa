@@ -39,31 +39,35 @@ export const generateAccessToken = (
         accessExpiresAt: new Date(Date.now() + AUTH_CONFIG.ACCESS_MS),
     };
 };
+
+
 export const verifyAccessToken = (
     token: string
 ): AccessTokenPayload => {
+    let decoded: string | jwt.JwtPayload;
+
     try {
-        const decoded = jwt.verify(
-            token,
-            process.env.JWT_ACCESS_SECRET as string
-        );
-
-        if (
-            typeof decoded !== "object" ||
-            decoded === null ||
-            !("userId" in decoded) ||
-            !("role" in decoded)
-        ) {
-            throw new ApiError(401, "Invalid access token");
+        decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET as string);
+    } catch (err) {
+        if (err instanceof jwt.TokenExpiredError) {
+            throw new ApiError(401, "Access token expired");
         }
-
-        return {
-            userId: decoded.userId as string,
-            role: decoded.role as string,
-        };
-    } catch {
-        throw new ApiError(401, "Invalid or expired access token");
+        throw new ApiError(401, "Invalid access token");
     }
+
+    if (
+        typeof decoded !== "object" ||
+        decoded === null ||
+        !("userId" in decoded) ||
+        !("role" in decoded)
+    ) {
+        throw new ApiError(401, "Invalid access token");
+    }
+
+    return {
+        userId: decoded.userId as string,
+        role: decoded.role as string,
+    };
 };
 
 export const generateRefreshToken = (

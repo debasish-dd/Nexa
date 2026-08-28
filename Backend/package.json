@@ -21,10 +21,13 @@
     "node-pg-migrate": "^9.0.0",
     "pg": "^8.22.0",
     "resend": "^6.18.1",
+    "socket.io": "^4.8.3",
+    "socket.io-client": "^4.8.3",
     "ua-parser-js": "^2.0.10",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/cookie": "^0.6.0",
     "@types/cookie-parser": "^1.4.10",
     "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
