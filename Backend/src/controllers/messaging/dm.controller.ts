@@ -10,11 +10,8 @@ export const createDM = asyncHandler(
         const userId = req.user.id;
         const { userId: otherUserId } = req.body;
 
-        if (!otherUserId) {
-            throw new ApiError(
-                400,
-                "Other user ID is required",
-            );
+        if (typeof otherUserId !== "string" || !otherUserId.trim()) {
+            throw new ApiError(400, "Other user ID is required");
         }
 
         const dm = await dmService.createDM(

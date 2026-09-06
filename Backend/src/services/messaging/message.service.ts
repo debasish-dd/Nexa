@@ -1,3 +1,4 @@
+
 import {
     createMessage as createMessageRepository,
     findMessageById,
@@ -6,9 +7,8 @@ import {
     softDeleteMessage,
 } from "../../repositories/messaging/message.repository";
 
-import {
-    isParticipant,
-} from "../../repositories/messaging/participant.repository";
+import { isParticipant } from "../../repositories/messaging/participant.repository";
+import { ApiError } from "../../utils/api-error";
 
 export const sendMessage = async (
     conversationId: string,
@@ -18,7 +18,7 @@ export const sendMessage = async (
     const trimmedContent = content.trim();
 
     if (!trimmedContent) {
-        throw new Error("Message content cannot be empty");
+        throw new ApiError(400, "Message content cannot be empty");
     }
 
     const participant = await isParticipant(
@@ -27,7 +27,8 @@ export const sendMessage = async (
     );
 
     if (!participant) {
-        throw new Error(
+        throw new ApiError(
+            403,
             "User is not a participant in this conversation",
         );
     }
@@ -44,19 +45,23 @@ export const getMessages = async (
     userId: string,
     limit: number = 50,
 ) => {
+    if (limit < 1 || limit > 100) {
+        throw new ApiError(
+            400,
+            "Message limit must be between 1 and 100",
+        );
+    }
+
     const participant = await isParticipant(
         conversationId,
         userId,
     );
 
     if (!participant) {
-        throw new Error(
+        throw new ApiError(
+            403,
             "User is not a participant in this conversation",
         );
-    }
-
-    if (limit < 1 || limit > 100) {
-        throw new Error("Message limit must be between 1 and 100");
     }
 
     return getMessagesRepository(
@@ -73,21 +78,25 @@ export const editMessage = async (
     const trimmedContent = content.trim();
 
     if (!trimmedContent) {
-        throw new Error("Message content cannot be empty");
+        throw new ApiError(400, "Message content cannot be empty");
     }
 
     const message = await findMessageById(messageId);
 
     if (!message) {
-        throw new Error("Message not found");
+        throw new ApiError(404, "Message not found");
     }
 
     if (message.deletedAt) {
-        throw new Error("Cannot edit a deleted message");
+        throw new ApiError(
+            409,
+            "Cannot edit a deleted message",
+        );
     }
 
     if (message.senderId !== userId) {
-        throw new Error(
+        throw new ApiError(
+            403,
             "You can only edit your own messages",
         );
     }
@@ -98,7 +107,10 @@ export const editMessage = async (
     );
 
     if (!updatedMessage) {
-        throw new Error("Failed to edit message");
+        throw new ApiError(
+            500,
+            "Failed to edit message",
+        );
     }
 
     return updatedMessage;
@@ -111,15 +123,19 @@ export const deleteMessage = async (
     const message = await findMessageById(messageId);
 
     if (!message) {
-        throw new Error("Message not found");
+        throw new ApiError(404, "Message not found");
     }
 
     if (message.deletedAt) {
-        throw new Error("Message is already deleted");
+        throw new ApiError(
+            409,
+            "Message is already deleted",
+        );
     }
 
     if (message.senderId !== userId) {
-        throw new Error(
+        throw new ApiError(
+            403,
             "You can only delete your own messages",
         );
     }
@@ -129,8 +145,12 @@ export const deleteMessage = async (
     );
 
     if (!deletedMessage) {
-        throw new Error("Failed to delete message");
+        throw new ApiError(
+            500,
+            "Failed to delete message",
+        );
     }
 
     return deletedMessage;
 };
+

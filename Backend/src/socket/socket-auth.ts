@@ -25,7 +25,8 @@ export const socketAuthMiddleware = (
         socket.data.userId = payload.userId;
 
         next();
-    } catch {
+    } catch (err) {
+        console.error("Socket auth failed:", err);
         next(new Error("Authentication failed"));
     }
 };

@@ -1,17 +1,45 @@
 import { Server, Socket } from "socket.io";
+import * as messageService from "../../services/messaging/message.service";
+import { messageSendSchema } from "../../validations/message.validation";
 
-export const registerMessageHandlers = (io: Server, socket: Socket) => {
+export const registerMessageHandlers = (
+    io: Server,
+    socket: Socket,
+) => {
     const userId = socket.data.userId as string;
 
     socket.on("typing:start", (conversationId: string) => {
-        socket.to(`conversation:${conversationId}`).emit("typing:start", { conversationId, userId });
+        const room = `conversation:${conversationId}`;
+        if (!socket.rooms.has(room)) return;
+        socket.to(room).emit("typing:start", { conversationId, userId });
     });
 
     socket.on("typing:stop", (conversationId: string) => {
-        socket.to(`conversation:${conversationId}`).emit("typing:stop", { conversationId, userId });
+        const room = `conversation:${conversationId}`;
+        if (!socket.rooms.has(room)) return;
+        socket.to(room).emit("typing:stop", { conversationId, userId });
     });
 
-    // Read receipts: deferred. Needs a repository/service method to
-    // persist "last read message per participant" that doesn't exist
-    // yet. Don't wire this event until that's built.
+    socket.on("message:send", async (data: { conversationId: string; content: string }) => {
+        try {
+            const parsed = messageSendSchema.safeParse(data);
+            if (!parsed.success) {
+                socket.emit("message:error", { message: "Invalid message payload" });
+                return;
+            }
+            const { conversationId, content } = parsed.data;
+
+            const room = `conversation:${conversationId}`;
+            if (!socket.rooms.has(room)) {
+                socket.emit("message:error", { message: "You are not a member of this conversation" });
+                return;
+            }
+
+            const savedMessage = await messageService.sendMessage(conversationId, userId, content);
+            io.to(room).emit("message:new", savedMessage);
+        } catch (error) {
+            console.error("Failed to send message:", error);
+            socket.emit("message:error", { message: "Failed to send message" });
+        }
+    });
 };
