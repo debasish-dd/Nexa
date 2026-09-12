@@ -11,7 +11,7 @@ import type { CookieOptions } from "express";
 import { sendPasswordResetEmail, sendVerificationEmail } from "../services/email.service";
 import crypto from "crypto";
 import jwt from 'jsonwebtoken';
-import type { AccessTokenPayload } from "../middleware/auth.middleawre";
+import type { AccessTokenPayload } from "../middleware/auth.middleware";
 import type {RefreshTokenPayload } from "../services/jwt.service";
 
 const generateVerificationToken = () => {
@@ -41,7 +41,7 @@ export const userRegister = asyncHandler(async (req: Request, res: Response) => 
   const result = await pool.query(
     `INSERT INTO users (username, email, password_hash, verification_token, verification_token_expires_at)
      VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, username, email, role, student_status, created_at`,
+     RETURNING id, username, email, role, user_status, created_at`,
     [username, email, passwordHash, hashedToken, tokenExpiresAt]
   );
   const user = result.rows[0];
@@ -66,7 +66,7 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
   const pool = getPool();
 
   const userResult = await pool.query(
-    `SELECT id, username, email, role, student_status, verification_token_expires_at, email_verified_at
+    `SELECT id, username, email, role, user_status, verification_token_expires_at, email_verified_at
      FROM users WHERE verification_token = $1`,
     [hashedToken]
   );
@@ -82,9 +82,9 @@ export const verifyEmail = asyncHandler(async (req: Request, res: Response) => {
      SET email_verified_at = now(),
          verification_token = NULL,
          verification_token_expires_at = NULL,
-         student_status = CASE WHEN student_status = 'UNVERIFIED' THEN 'VERIFIED' ELSE student_status END
+         user_status = CASE WHEN user_status = 'UNVERIFIED' THEN 'VERIFIED' ELSE user_status END
      WHERE id = $1
-     RETURNING id, username, email, role, student_status`,
+     RETURNING id, username, email, role, user_status`,
     [user.id]
   );
   const verifiedUser = updateResult.rows[0];
@@ -175,7 +175,7 @@ export const userLogin = asyncHandler(async (req: Request, res: Response) => {
 
   const pool = getPool();
   const result = await pool.query(
-    `SELECT id, username, email, password_hash, role, student_status, email_verified_at
+    `SELECT id, username, email, password_hash, role, user_status, email_verified_at
      FROM users
      WHERE username = $1 OR email = $1`,
     [identifier]
@@ -201,6 +201,7 @@ export const userLogin = asyncHandler(async (req: Request, res: Response) => {
     sameSite: "lax",
     maxAge: accessExpiresAt.getTime() - Date.now(),
   });
+  
   res.cookie("refreshToken", refreshToken, {
     httpOnly: true,
     secure: true,
@@ -227,7 +228,7 @@ export const userLogin = asyncHandler(async (req: Request, res: Response) => {
       username: user.username,
       email: user.email,
       role: user.role,
-      student_status: user.student_status,
+      user_status: user.user_status,
       email_verified_at: user.email_verified_at,
     })
   );

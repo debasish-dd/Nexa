@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Socket.io Test Harness</title>
+  <script src="https://cdn.socket.io/4.8.3/socket.io.min.js"></script>
+  <style>
+    body { font-family: monospace; max-width: 500px; margin: 30px auto; }
+    input, button { display: block; width: 100%; margin: 6px 0; padding: 8px; box-sizing: border-box; }
+    #log { border: 1px solid #ccc; height: 250px; overflow-y: auto; padding: 8px; margin-top: 10px; background: #f9f9f9; }
+    .msg { margin: 2px 0; }
+    .status { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h3>Socket.io Test Client</h3>
+
+  <div id="loginBox">
+    <input id="identifier" placeholder="username or email" />
+    <input id="password" placeholder="password" type="password" />
+    <button onclick="login()">Login</button>
+  </div>
+
+  <div id="chatBox" style="display:none">
+    <p class="status" id="status">not connected</p>
+    <input id="conversationId" placeholder="conversation id (from Postman POST /conversations)" />
+    <button onclick="connectSocket()">Connect Socket</button>
+
+    <input id="messageText" placeholder="type a message" />
+    <button onclick="sendMessage()">Send</button>
+
+    <div id="log"></div>
+  </div>
+
+  <script>
+    let socket = null;
+
+    function log(text) {
+      const el = document.getElementById("log");
+      const line = document.createElement("div");
+      line.className = "msg";
+      line.textContent = text;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+    }
+
+    async function login() {
+      const identifier = document.getElementById("identifier").value;
+      const password = document.getElementById("password").value;
+
+      const res = await fetch("/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include", // REQUIRED — sends/receives the httpOnly cookie
+        body: JSON.stringify({ identifier, password })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        log("Login failed: " + data.message);
+        return;
+      }
+
+      log("Logged in as: " + data.data.username);
+      document.getElementById("loginBox").style.display = "none";
+      document.getElementById("chatBox").style.display = "block";
+    }
+
+    function connectSocket() {
+      // Same-origin (this page is served from your backend on :8080), so no URL
+      // or extra CORS config needed here — the browser sends the login cookie
+      // automatically because it's the same site.
+      socket = io({ withCredentials: true });
+
+      socket.on("connect", () => {
+        document.getElementById("status").textContent = "connected: " + socket.id;
+        log("[socket] connected");
+        // No join event needed — connection.handler.ts auto-joins this socket
+        // to every conversation room the logged-in user is already a
+        // participant in (looked up from the DB at connect time). If the
+        // conversation didn't exist yet when you connected, this socket
+        // won't be in the room — disconnect and reconnect after creating it.
+      });
+
+      socket.on("connect_error", (err) => {
+        log("[socket] connect_error: " + err.message);
+      });
+
+      socket.on("message:new", (payload) => {
+        log("[received] " + JSON.stringify(payload));
+      });
+
+      socket.on("message:error", (payload) => {
+        log("[server error] " + payload.message);
+      });
+    }
+
+    function sendMessage() {
+      const conversationId = document.getElementById("conversationId").value;
+      const content = document.getElementById("messageText").value;
+
+      socket.emit("message:send", { conversationId, content });
+      log("[sent] " + content);
+      document.getElementById("messageText").value = "";
+    }
+  </script>
+</body>
+</html>

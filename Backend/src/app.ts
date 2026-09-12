@@ -7,6 +7,11 @@ import cookieParser from "cookie-parser";
 import authRouter from "./routes/auth.routes";
 import { ApiError } from "./utils/api-error";
 import type { ErrorRequestHandler, NextFunction, Request, Response } from "express";
+import dmRouter from "./routes/dm.routes";
+import groupRouter from "./routes/group.routes";
+import conversationRouter from "./routes/conversation.routes";
+
+
 
 const app = express();
 
@@ -17,6 +22,7 @@ app.use(cors({
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(express.static("public"));
 
 app.set("trust proxy", true);
 
@@ -25,6 +31,10 @@ app.use("/api/v1/auth", authRouter);
 app.get("/healthcheck", (_req, res) => {
     return res.status(200).json({ message: "Server is running" });
 });
+
+app.use("/api/v1/dms", dmRouter);
+app.use("/api/v1/groups", groupRouter);
+app.use("/api/v1/conversations", conversationRouter);
 
 app.use((req: Request, res: Response) => {
     res.status(404).json({

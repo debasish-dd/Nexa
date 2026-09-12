@@ -17,7 +17,6 @@ export const socketAuthMiddleware = (
         if (!rawCookies) return next(new Error("Authentication required"));
 
         const parsedCookies = cookie.parse(rawCookies);
-        // FIX BEFORE USE: confirm this matches your actual cookie name.
         const accessToken = parsedCookies["accessToken"];
         if (!accessToken) return next(new Error("Authentication required"));
 

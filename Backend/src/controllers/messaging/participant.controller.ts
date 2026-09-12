@@ -10,6 +10,7 @@ import {
     removeParticipant as removeParticipantService,
     type ParticipantRole,
 } from "../../services/messaging/participant.service";
+import { isParticipant } from "../../repositories/messaging/participant.repository";
 
 const ALLOWED_ROLES: ParticipantRole[] = ["member", "mod", "admin"];
 
@@ -32,22 +33,42 @@ export const addParticipant = asyncHandler(async (req: Request, res: Response) =
     .json(
         new ApiResponse(
             200,
-            "Participant role updated",
+            "Participant added successfully",
             participant,
         ),
     );
 });
 
 
-export const getConversationParticipants = asyncHandler(async (req: Request, res: Response) => {
-    const { conversationId } = req.params;
 
-    const participants = await getConversationParticipantsService(conversationId);
+export const getConversationParticipants = asyncHandler(
+    async (req: Request, res: Response) => {
+        const { conversationId } = req.params;
+        const userId = req.user.id;
 
-    return res
-        .status(200)
-        .json(new ApiResponse(200, "Participants fetched successfully", participants));
-});
+        const member = await isParticipant(conversationId, userId);
+
+        if (!member) {
+            throw new ApiError(
+                403,
+                "You are not a participant in this conversation"
+            );
+        }
+
+        const participants =
+            await getConversationParticipantsService(conversationId);
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    "Participants fetched successfully",
+                    participants
+                )
+            );
+    }
+);
 
 
 export const checkParticipant = asyncHandler(async (req: Request, res: Response) => {
@@ -93,21 +114,35 @@ export const changeParticipantRole = asyncHandler(async (req: Request, res: Resp
 });
 
 
-export const removeParticipant = asyncHandler(async (req: Request, res: Response) => {
-    const { conversationId } = req.params;
-    const { userId } = req.body;
 
-    if (!userId) {
-        throw new ApiError(400, "userId is required");
+export const removeParticipant = asyncHandler(
+    async (req: Request, res: Response) => {
+        const { conversationId, userId } = req.params;
+
+        if (!userId) {
+            throw new ApiError(400, "userId is required");
+        }
+
+        const removed = await removeParticipantService(
+            conversationId,
+            userId
+        );
+
+        if (!removed) {
+            throw new ApiError(
+                404,
+                "Participant not found in this conversation"
+            );
+        }
+
+        return res
+            .status(200)
+            .json(
+                new ApiResponse(
+                    200,
+                    "Participant removed successfully",
+                    null
+                )
+            );
     }
-
-    const removed = await removeParticipantService(conversationId, userId);
-
-    if (!removed) {
-        throw new ApiError(404, "Participant not found in this conversation");
-    }
-
-    return res
-        .status(200)
-        .json(new ApiResponse(200, "Participant removed successfully", null));
-});
+);
