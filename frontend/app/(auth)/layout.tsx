@@ -20,7 +20,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
       <div className="relative w-full max-w-105">
         <div className="mb-8 text-center">
           <span className="text-lg font-extrabold tracking-tight text-[#111111]">
-            Campus
+            NEXA
           </span>
         </div>
 

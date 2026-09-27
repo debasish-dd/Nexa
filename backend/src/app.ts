@@ -16,7 +16,7 @@ import conversationRouter from "./routes/conversation.routes";
 const app = express();
 
 app.use(cors({
-    origin: "*", // still needs fixing — see note below
+    origin: "http://localhost:3000", // still needs fixing — see note below
     credentials: true
 }));
 app.use(express.json());

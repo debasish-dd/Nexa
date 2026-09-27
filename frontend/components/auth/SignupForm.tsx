@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { signupSchema, type SignupFormValues } from "@/lib/auth/schemas";
+import { signupSchema, type SignupFormValues } from "@/libs/auth/schemas";
 import { useAuthStore } from "@/store/authStore";
 import { AuthInput } from "./AuthInput";
 import { AuthButton } from "./AuthButton";
@@ -24,9 +24,11 @@ export function SignupForm() {
   const onSubmit = async (values: SignupFormValues) => {
     try {
       await signup(values);
-      router.push("/dashboard");
-    } catch {
-      setError("root", { message: "Something went wrong. Try again." });
+      router.push("/feed");
+    } catch (err) {
+      setError("root", {
+        message: err instanceof Error ? err.message : "Something went wrong. Try again.",
+      });
     }
   };
 
@@ -37,6 +39,12 @@ export function SignupForm() {
         autoComplete="name"
         error={errors.name?.message}
         {...register("name")}
+      />
+      <AuthInput
+        label="Username"
+        autoComplete="username"
+        error={errors.username?.message}
+        {...register("username")}
       />
       <AuthInput
         label="Email"

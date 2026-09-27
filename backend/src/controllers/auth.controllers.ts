@@ -443,3 +443,33 @@ export const refreshAccessToken = asyncHandler(async (req: Request, res: Respons
 
   return res.status(200).json(new ApiResponse(200, "Access token refreshed"));
 });
+
+export const getCurrentUser = asyncHandler(
+  async (req: Request, res: Response) => {
+    const userId = req.user.userId;
+    const pool = getPool();
+    
+    const result = await pool.query(
+      `
+      SELECT
+        id,
+        email,
+        username,
+        email_verified_at,
+        created_at
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+      `,
+      [userId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new ApiError(401, "User not found");
+    }
+
+    return res.status(200).json({
+      user: result.rows[0],
+    });
+  }
+);

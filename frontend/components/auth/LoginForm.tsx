@@ -4,10 +4,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { loginSchema, type LoginFormValues } from "@/lib/auth/schemas";
+import { loginSchema, type LoginFormValues } from "@/libs/auth/schemas";
 import { useAuthStore } from "@/store/authStore";
 import { AuthInput } from "./AuthInput";
 import { AuthButton } from "./AuthButton";
+
 
 export function LoginForm() {
   const router = useRouter();
@@ -22,22 +23,26 @@ export function LoginForm() {
   } = useForm<LoginFormValues>({ resolver: zodResolver(loginSchema) });
 
   const onSubmit = async (values: LoginFormValues) => {
+    
     try {
+      
       await login(values);
-      router.push("/dashboard");
-    } catch {
-      setError("root", { message: "Wrong email or password" });
+      router.push("/feed");
+    } catch (err) {
+      setError("root", {
+        message: err instanceof Error ? err.message : "Wrong email/username or password",
+      });
     }
   };
 
   return (
     <form onSubmit={handleSubmit(onSubmit)} noValidate className="flex flex-col gap-5">
       <AuthInput
-        label="Email"
-        type="email"
-        autoComplete="email"
-        error={errors.email?.message}
-        {...register("email")}
+        label="Email or username"
+        type="text"
+        autoComplete="username"
+        error={errors.identifier?.message}
+        {...register("identifier")}
       />
       <AuthInput
         label="Password"
@@ -47,11 +52,7 @@ export function LoginForm() {
         {...register("password")}
       />
 
-      <div className="flex items-center justify-between text-sm">
-        <label className="flex items-center gap-2 text-[#111111]/70">
-          <input type="checkbox" className="h-4 w-4 accent-[#D7FF3F]" />
-          Remember me
-        </label>
+      <div className="text-right text-sm">
         <Link href="/forgot-password" className="font-medium text-[#111111] underline">
           Forgot password?
         </Link>
