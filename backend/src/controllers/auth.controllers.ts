@@ -23,38 +23,44 @@ const generateVerificationToken = () => {
 
 export const userRegister = asyncHandler(async (req: Request, res: Response) => {
   const { username, email, password } = req.body;
-
-  const passwordHash = await argon2.hash(password);
-
   const pool = getPool();
+
   const existing = await pool.query(
-    `SELECT id FROM users WHERE username = $1 OR email = $2`,
+    `SELECT id FROM users WHERE lower(username) = lower($1) OR email = $2`,
     [username, email]
   );
   if (existing.rows.length > 0) {
-    throw new ApiError(400, "Username or email already exists");
+    throw new ApiError(409, "Username or email already exists");
   }
+
+  const passwordHash = await argon2.hash(password); 
 
   const { rawToken, hashedToken } = generateVerificationToken();
   const tokenExpiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-  const result = await pool.query(
-    `INSERT INTO users (username, email, password_hash, verification_token, verification_token_expires_at)
-     VALUES ($1, $2, $3, $4, $5)
-     RETURNING id, username, email, role, user_status, created_at`,
-    [username, email, passwordHash, hashedToken, tokenExpiresAt]
-  );
-  const user = result.rows[0];
+  try {
+    await pool.query(
+      `INSERT INTO users (username, email, password_hash, verification_token, verification_token_expires_at)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [username, email, passwordHash, hashedToken, tokenExpiresAt]
+    );
+  } catch (err) {
+    const e = err as { code?: string; constraint?: string };
+    if (e.code === "23505") {
+      if (e.constraint === "users_email_key") throw new ApiError(409, "Email already registered");
+      throw new ApiError(409, "Username already taken"); 
+    }
+    throw err;
+  }
 
   try {
-    await sendVerificationEmail(user.email, rawToken, user.username);
+    await sendVerificationEmail(email, rawToken, username);
   } catch (err) {
-
-    console.error("Failed to send verification email:", err);
+    console.error("Failed to send verification email:", err); // account exists, so don't fail the request
   }
 
   return res.status(201).json(
-    new ApiResponse(201, "Registered. Check your email to verify your account.", user)
+    new ApiResponse(201, "Registered. Check your email to verify your account.")
   );
 });
 
@@ -177,7 +183,7 @@ export const userLogin = asyncHandler(async (req: Request, res: Response) => {
   const result = await pool.query(
     `SELECT id, username, email, password_hash, role, user_status, email_verified_at
      FROM users
-     WHERE username = $1 OR email = $1`,
+     WHERE lower(username) = lower($1) OR email = lower($1)`,
     [identifier]
   );
   const user = result.rows[0];
@@ -277,7 +283,7 @@ export const forgotPassword = asyncHandler(async (req: Request, res: Response) =
 
   const pool = getPool();
   const result = await pool.query(
-    `SELECT id, email FROM users WHERE username = $1 OR email = $1`,
+    `SELECT id, email FROM users WHERE lower(username) = lower($1) OR email = lower($1)`,
     [identifier]
   );
   const user = result.rows[0];

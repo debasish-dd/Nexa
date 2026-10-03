@@ -8,7 +8,7 @@ export async function loginRequest(payload: LoginPayload): Promise<AuthUser> {
 }
 
 export async function signupRequest(payload: SignupPayload): Promise<AuthUser> {
-  const res = await http.post<{ data: AuthUser }>("/auth/signup", payload);
+  const res = await http.post<{ data: AuthUser }>("/auth/register", payload);
   return res.data.data;
 }
 
