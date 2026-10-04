@@ -10,6 +10,7 @@ import type { ErrorRequestHandler, NextFunction, Request, Response } from "expre
 import dmRouter from "./routes/dm.routes";
 import groupRouter from "./routes/group.routes";
 import conversationRouter from "./routes/conversation.routes";
+import userRoutes from "./routes/user.routes";
 
 
 
@@ -27,6 +28,7 @@ app.use(express.static("public"));
 app.set("trust proxy", true);
 
 app.use("/api/v1/auth", authRouter);
+app.use("/api/v1/users", userRoutes); 
 
 app.get("/healthcheck", (_req, res) => {
     return res.status(200).json({ message: "Server is running" });
