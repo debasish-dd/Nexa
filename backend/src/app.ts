@@ -17,7 +17,7 @@ import userRoutes from "./routes/user.routes";
 const app = express();
 
 app.use(cors({
-    origin: "http://localhost:3000", // still needs fixing — see note below
+    origin: "http://localhost:3000", 
     credentials: true
 }));
 app.use(express.json());
@@ -25,7 +25,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 app.use(express.static("public"));
 
-app.set("trust proxy", true);
+// app.set("trust proxy", true);
 
 app.use("/api/v1/auth", authRouter);
 app.use("/api/v1/users", userRoutes); 

@@ -18,6 +18,11 @@ const DEFAULT_LIMIT = 50;
 export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
     const { conversationId } = req.params;
     const { content } = req.body;
+    if (typeof content !== "string" || !content.trim()) {
+        throw new ApiError(400, "Message content is required");
+    }
+
+    const normalizedContent = content.trim();
     const senderId = req.user?.id;
 
     if (!senderId) {
@@ -27,11 +32,11 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
         throw new ApiError(400, "Message content is required");
     }
 
-    const message = await sendMessageService(conversationId, senderId, content);
+    const message = await sendMessageService(conversationId, senderId, normalizedContent);
 
     return res
         .status(201)
-        .json(new ApiResponse(201,  "Message sent successfully", message));
+        .json(new ApiResponse(201, "Message sent successfully", message));
 });
 
 /**
@@ -56,7 +61,7 @@ export const getMessages = asyncHandler(async (req: Request, res: Response) => {
 
     return res
         .status(200)
-        .json(new ApiResponse(200,  "Messages fetched successfully", messages));
+        .json(new ApiResponse(200, "Messages fetched successfully", messages));
 });
 
 /**
@@ -79,7 +84,7 @@ export const editMessage = asyncHandler(async (req: Request, res: Response) => {
 
     return res
         .status(200)
-        .json(new ApiResponse(200,  "Message edited successfully", updatedMessage));
+        .json(new ApiResponse(200, "Message edited successfully", updatedMessage));
 });
 
 /**
@@ -97,5 +102,5 @@ export const deleteMessage = asyncHandler(async (req: Request, res: Response) =>
 
     return res
         .status(200)
-        .json(new ApiResponse(200,  "Message deleted successfully" , deletedMessage));
+        .json(new ApiResponse(200, "Message deleted successfully", deletedMessage));
 });

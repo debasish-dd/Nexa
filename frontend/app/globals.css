@@ -3,6 +3,9 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  --accent: #a3e635;     /* Lime 400 */
+  --accent-fg: #172000;  /* Dark text for contrast */
 }
 
 @theme inline {

@@ -1,8 +1,5 @@
 import axios from "axios";
 
-// A plain Error loses the HTTP status code, but some call sites need it
-// (e.g. treating 401 on /auth/me as "not logged in" rather than a real
-// error) — so this carries it along instead of throwing it away.
 export class ApiRequestError extends Error {
   status?: number;
   constructor(message: string, status?: number) {

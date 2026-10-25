@@ -14,7 +14,7 @@ const cards = [
       </>
     ),
     description: "Quick thoughts, big ideas, and the moment in between.",
-    image: "/hero/share-object.webp",
+    image: "/hero/polaroid.webp",
     className: "bg-[#efeee9]",
   },
   {
@@ -27,7 +27,7 @@ const cards = [
       </>
     ),
     description: "Find your people. Or create your own.",
-    image: "/hero/community-object.webp",
+    image: "/hero/black_card.webp",
     className: "bg-[#dfff00]",
   },
   {
@@ -40,7 +40,7 @@ const cards = [
       </>
     ),
     description: "A profile that's truly yours.",
-    image: "/hero/crown.webp",
+    image: "/hero/statue.webp",
     className: "bg-[#efeee9]",
   },
 ];

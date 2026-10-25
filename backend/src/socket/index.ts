@@ -1,4 +1,4 @@
-// socket/index.ts
+
 import { Server as HTTPServer } from "http";
 import { Server as SocketIOServer } from "socket.io";
 import { socketAuthMiddleware } from "./socket-auth";
@@ -10,8 +10,9 @@ let io: SocketIOServer | null = null;
 export const initSocket = (httpServer: HTTPServer): SocketIOServer => {
     io = new SocketIOServer(httpServer, {
         cors: {
-            origin: "*",
+            origin: process.env.FRONTEND_URL ?? "http://localhost:3000",
             credentials: true,
+            methods: ["GET", "POST"],
         },
     });
 
@@ -25,11 +26,11 @@ export const initSocket = (httpServer: HTTPServer): SocketIOServer => {
     return io;
 };
 
-// Lets REST controllers reach the live socket server to broadcast
-// after a successful save — same singleton shape as your getPool().
+// Lets REST controllers broadcast after successful database operations.
 export const getIO = (): SocketIOServer => {
     if (!io) {
         throw new Error("Socket.io not initialized — call initSocket() first");
     }
+
     return io;
 };

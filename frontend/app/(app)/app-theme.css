@@ -1,0 +1,33 @@
+/* All app colours live here.
+   --accent       background of buttons, avatar, logo, own chat bubbles
+   --accent-fg    text that sits ON the accent (dark, because lime is bright)
+   --accent-text  accent used as text/icon/focus colour on the page background
+   To change the accent later, edit these three in BOTH blocks. */
+
+.app-shell {
+  color-scheme: light;
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --surface-2: #eceff3;
+  --border: #e0e5eb;
+  --text: #0b1220;
+  --muted: #5b6877;
+  --accent: #a3e635;
+  --accent-fg: #0b1220;
+  --accent-text: #4d7c0f;
+  --danger: #d92d3a;
+}
+
+.app-shell[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a111b;
+  --surface: #101a27;
+  --surface-2: #162233;
+  --border: #1d2b3d;
+  --text: #e8eef7;
+  --muted: #8a98ab;
+  --accent: #a3e635;
+  --accent-fg: #0b1220;
+  --accent-text: #a3e635;
+  --danger: #ff6369;
+}

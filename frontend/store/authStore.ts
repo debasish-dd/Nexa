@@ -7,7 +7,6 @@ import {
   logoutRequest,
 } from "@/libs/auth/api";
 
-
 type AuthState = {
   user: AuthUser | null;
   isAuthenticated: boolean;
@@ -28,7 +27,6 @@ export const useAuthStore = create<AuthState>((set) => ({
   login: async (payload) => {
     set({ isLoading: true });
     try {
-      
       const user = await loginRequest(payload);
       set({ user, isAuthenticated: true, isLoading: false });
     } catch (err) {
@@ -49,8 +47,13 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   logout: async () => {
-    await logoutRequest();
-    set({ user: null, isAuthenticated: false });
+    try {
+      await logoutRequest();
+    } finally {
+      // clear local state even if the request failed, otherwise the UI
+      // would still think someone is logged in
+      set({ user: null, isAuthenticated: false });
+    }
   },
 
   hydrate: async () => {

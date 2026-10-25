@@ -8,9 +8,9 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
   const router = useRouter();
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
 
-  useEffect(() => {
-    if (isAuthenticated) router.replace("/dashboard");
-  }, [isAuthenticated, router]);
+  // useEffect(() => {
+  //   if (isAuthenticated) router.replace("/feed");
+  // }, [isAuthenticated, router]);
 
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-[#F3F1EA] px-4 py-12">
