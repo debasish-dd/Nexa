@@ -7,7 +7,7 @@ import { ApiResponse } from "../../utils/api-response";
 
 export const createGroup = asyncHandler(
     async (req: Request, res: Response) => {
-        const adminId = req.user.id;
+        const adminId = req.user.userId;
 
         const {
             name,

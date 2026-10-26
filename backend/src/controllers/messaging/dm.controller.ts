@@ -6,30 +6,32 @@ import { ApiError } from "../../utils/api-error";
 import { ApiResponse } from "../../utils/api-response";
 
 export const createDM = asyncHandler(
-    async (req: Request, res: Response) => {
-        const userId = req.user.id;
-        const { userId: otherUserId } = req.body;
+  async (req: Request, res: Response) => {
+    const userId = req.user?.userId;
+    const { userId: otherUserId } = req.body;
 
-        if (typeof otherUserId !== "string" || !otherUserId.trim()) {
-            throw new ApiError(400, "Other user ID is required");
-        }
+    if (!userId) {
+      throw new ApiError(401, "Authentication required");
+    }
 
-        const dm = await dmService.createDM(
-            userId,
-            otherUserId,
-        );
+    if (
+      typeof otherUserId !== "string" ||
+      !otherUserId.trim()
+    ) {
+      throw new ApiError(400, "Other user ID is required");
+    }
 
-        res.status(201).json(new ApiResponse(
-            201,
-            "DM conversation created successfully",
-            dm
-        ));
-    },
+    const dm = await dmService.createDM(userId, otherUserId);
+
+    res.status(201).json(
+      new ApiResponse(201, "DM conversation created successfully", dm)
+    );
+  }
 );
 
 export const getDM = asyncHandler(
     async (req: Request, res: Response) => {
-        const userId = req.user.id;
+        const userId = req.user?.userId;
         const { userId: otherUserId } = req.params;
 
         if (!otherUserId) {
@@ -61,7 +63,7 @@ export const getDM = asyncHandler(
 
 export const deleteDM = asyncHandler(
     async (req: Request, res: Response) => {
-        const userId = req.user.id;
+        const userId = req.user?.userId;
         const { conversationId } = req.params;
 
         if (!conversationId) {

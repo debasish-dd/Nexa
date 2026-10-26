@@ -23,7 +23,7 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
     }
 
     const normalizedContent = content.trim();
-    const senderId = req.user?.id;
+    const senderId = req.user?.userId;
 
     if (!senderId) {
         throw new ApiError(401, "Unauthorized");
@@ -44,7 +44,7 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
  */
 export const getMessages = asyncHandler(async (req: Request, res: Response) => {
     const { conversationId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
 
     if (!userId) {
         throw new ApiError(401, "Unauthorized");
@@ -71,7 +71,7 @@ export const getMessages = asyncHandler(async (req: Request, res: Response) => {
 export const editMessage = asyncHandler(async (req: Request, res: Response) => {
     const { messageId } = req.params;
     const { content } = req.body;
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
 
     if (!userId) {
         throw new ApiError(401, "Unauthorized");
@@ -92,7 +92,7 @@ export const editMessage = asyncHandler(async (req: Request, res: Response) => {
  */
 export const deleteMessage = asyncHandler(async (req: Request, res: Response) => {
     const { messageId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
 
     if (!userId) {
         throw new ApiError(401, "Unauthorized");

@@ -44,7 +44,7 @@ export const addParticipant = asyncHandler(async (req: Request, res: Response) =
 export const getConversationParticipants = asyncHandler(
     async (req: Request, res: Response) => {
         const { conversationId } = req.params;
-        const userId = req.user.id;
+        const userId = req.user?.userId;
 
         const member = await isParticipant(conversationId, userId);
 
@@ -73,7 +73,7 @@ export const getConversationParticipants = asyncHandler(
 
 export const checkParticipant = asyncHandler(async (req: Request, res: Response) => {
     const { conversationId } = req.params;
-    const userId = req.user?.id;
+    const userId = req.user?.userId;
 
     if (!userId) {
         throw new ApiError(401, "Unauthorized");
@@ -89,11 +89,11 @@ export const checkParticipant = asyncHandler(async (req: Request, res: Response)
 
 export const changeParticipantRole = asyncHandler(async (req: Request, res: Response) => {
     const { conversationId } = req.params;
-
+    const userId = req.user?.userId;
     if (!conversationId || Array.isArray(conversationId)) {
         throw new ApiError(400, "Invalid conversation ID");
     }
-    const { userId, role } = req.body;
+    const { role } = req.body;
 
     if (!userId || !role) {
         throw new ApiError(400, "userId and role are required");

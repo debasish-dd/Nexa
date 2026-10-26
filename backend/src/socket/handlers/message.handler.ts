@@ -6,6 +6,7 @@ import {
     messageEditSchema,
     messageDeleteSchema,
 } from "../../validations/message.validation";
+import { isParticipant } from "../../repositories/messaging/participant.repository";
 
 export const registerMessageHandlers = (io: Server, socket: Socket) => {
     const userId = socket.data.userId as string;
@@ -21,6 +22,56 @@ export const registerMessageHandlers = (io: Server, socket: Socket) => {
         if (!socket.rooms.has(room)) return;
         socket.to(room).emit("typing:stop", { conversationId, userId });
     });
+    socket.on(
+        "conversation:join",
+        async (
+            data: { conversationId: string },
+            ack?: (result: {
+                ok: boolean;
+                message?: string;
+            }) => void,
+        ) => {
+            try {
+                const { conversationId } = data;
+
+                if (
+                    typeof conversationId !== "string" ||
+                    !conversationId.trim()
+                ) {
+                    ack?.({
+                        ok: false,
+                        message: "Invalid conversation ID",
+                    });
+                    return;
+                }
+
+                // Verify membership before allowing the socket into the room.
+                const member = await isParticipant(
+                    conversationId,
+                    userId,
+                );
+
+                if (!member) {
+                    ack?.({
+                        ok: false,
+                        message: "You are not a member of this conversation",
+                    });
+                    return;
+                }
+
+                await socket.join(`conversation:${conversationId}`);
+
+                ack?.({ ok: true });
+            } catch (error) {
+                console.error("Failed to join conversation:", error);
+
+                ack?.({
+                    ok: false,
+                    message: "Failed to join conversation",
+                });
+            }
+        },
+    );
 
     socket.on("message:send", async (data: { conversationId: string; content: string }) => {
         try {

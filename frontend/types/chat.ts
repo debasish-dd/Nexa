@@ -11,5 +11,7 @@ export type Message = {
   senderId: string;
   content: string;
   createdAt: string;
-  deletedAt: string | null;
+  editedAt?: string | null;
+  deletedAt?: string | null;
+  
 };

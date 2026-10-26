@@ -79,6 +79,14 @@ export const getDM = async (
     userAId: string,
     userBId: string,
 ): Promise<DMDetails | null> => {
+    if (
+        typeof userAId !== "string" ||
+        !userAId.trim() ||
+        typeof userBId !== "string" ||
+        !userBId.trim()
+    ) {
+        throw new ApiError(400, "Both user IDs are required");
+    }
     if (userAId === userBId) {
         throw new ApiError(
             400,
@@ -123,6 +131,15 @@ export const createDM = async (
     userAId: string,
     userBId: string,
 ): Promise<DMConversationResult> => {
+
+    if (
+        typeof userAId !== "string" ||
+        !userAId.trim() ||
+        typeof userBId !== "string" ||
+        !userBId.trim()
+    ) {
+        throw new ApiError(400, "Both user IDs are required");
+    }
     if (userAId === userBId) {
         throw new ApiError(
             400,
