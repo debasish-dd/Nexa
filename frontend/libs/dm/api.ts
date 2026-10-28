@@ -1,5 +1,5 @@
 import { http } from "@/libs/http/client";
-import type { DMConversation, Message } from "@/types/chat";
+import type { DMConversation, InboxItem, Message } from "@/types/chat";
 
 
 
@@ -65,5 +65,15 @@ export async function deleteMessage(
   const res = await http.delete<{ data: Message }>(
     `/conversations/${conversationId}/messages/${messageId}`
   );
+  return res.data.data;
+}
+
+
+
+// ⚠️ Same mount-path assumption: the conversation router lives at /conversations.
+export async function getInbox(limit = 30): Promise<InboxItem[]> {
+  const res = await http.get<{ data: InboxItem[] }>("/conversations", {
+    params: { limit },
+  });
   return res.data.data;
 }

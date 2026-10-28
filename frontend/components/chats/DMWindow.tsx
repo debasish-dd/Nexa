@@ -1,178 +1,241 @@
 "use client";
 
-import { useEffect, useRef, useState, type SubmitEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type SubmitEvent } from "react";
 import { useChatStore } from "@/store/chatStore";
 import { useAuthStore } from "@/store/authStore";
 import type { Message } from "@/types/chat";
 
-const EMPTY_MESSAGES: Message[] = [];
+// A constant, so the selector below never returns a brand-new [] on every call.
+const NO_MESSAGES: Message[] = [];
 
-function formatMessageTime(createdAt: string | Date): string {
-  const date = new Date(createdAt);
+type Row =
+  | { kind: "day"; key: string; label: string }
+  | { kind: "message"; key: string; message: Message; startsGroup: boolean };
 
-  if (Number.isNaN(date.getTime())) return "";
+const isSameDay = (a: string, b: string) =>
+  new Date(a).toDateString() === new Date(b).toDateString();
 
-  return date.toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: true,
+const dayLabel = (iso: string) => {
+  const date = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date();
+  yesterday.setDate(today.getDate() - 1);
+
+  if (date.toDateString() === today.toDateString()) return "Today";
+  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
+  return date.toLocaleDateString([], {
+    day: "numeric",
+    month: "short",
+    year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
   });
+};
+
+const timeLabel = (iso: string) =>
+  new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+function MessageBubble({
+  message,
+  isOwn,
+  startsGroup,
+}: {
+  message: Message;
+  isOwn: boolean;
+  startsGroup: boolean;
+}) {
+  const isDeleted = Boolean(message.deletedAt);
+
+  const bubbleStyle = isDeleted
+    ? "border border-dashed border-[var(--border)] text-[var(--muted)]"
+    : isOwn
+      ? "bg-[var(--accent)] text-[var(--accent-fg)]"
+      : "bg-[var(--surface-2)] text-[var(--text)]";
+
+  return (
+    <div
+      className={`flex ${isOwn ? "justify-end" : "justify-start"} ${
+        startsGroup ? "mt-3" : "mt-0.5"
+      }`}
+    >
+      <div
+        className={`max-w-[75%] rounded-2xl px-3.5 py-2 text-[15px] ${bubbleStyle}`}
+      >
+        {isDeleted ? (
+          <span className="italic">This message was deleted</span>
+        ) : (
+          <p className="whitespace-pre-wrap wrap-break-word">{message.content}</p>
+        )}
+        <div className="mt-0.5 flex justify-end gap-1 text-[11px] opacity-70">
+          {message.editedAt && !isDeleted && <span>edited</span>}
+          <span>{timeLabel(message.createdAt)}</span>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 export function DMWindow({ otherUserId }: { otherUserId: string }) {
   const [draft, setDraft] = useState("");
-  const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const stickToBottom = useRef(true);
 
   const currentUserId = useAuthStore((s) => s.user?.id);
-
   const openDM = useChatStore((s) => s.openDM);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const isLoadingHistory = useChatStore((s) => s.isLoadingHistory);
   const sendError = useChatStore((s) => s.sendError);
-
   const messages = useChatStore((s) =>
     s.activeConversationId
-      ? (s.messages[s.activeConversationId] ?? EMPTY_MESSAGES)
-      : EMPTY_MESSAGES,
+      ? (s.messages[s.activeConversationId] ?? NO_MESSAGES)
+      : NO_MESSAGES
   );
 
   useEffect(() => {
-    void openDM(otherUserId);
-  }, [otherUserId, openDM]);
+    openDM(otherUserId);
+  }, [openDM, otherUserId]);
 
+  // Oldest to newest no matter what order the backend returns, with a day
+  // separator whenever the date changes and grouping for consecutive senders.
+  const rows = useMemo<Row[]>(() => {
+    const sorted = [...messages].sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime() ||
+        a.id.localeCompare(b.id)
+    );
+
+    const result: Row[] = [];
+    let prev: Message | null = null;
+
+    for (const message of sorted) {
+      const newDay = !prev || !isSameDay(prev.createdAt, message.createdAt);
+      if (newDay) {
+        result.push({
+          kind: "day",
+          key: `day-${message.id}`,
+          label: dayLabel(message.createdAt),
+        });
+      }
+      result.push({
+        kind: "message",
+        key: message.id,
+        message,
+        startsGroup: newDay || prev?.senderId !== message.senderId,
+      });
+      prev = message;
+    }
+    return result;
+  }, [messages]);
+
+  // New chat opened: start pinned to the bottom.
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({
-      behavior: "smooth",
-      block: "end",
-    });
-  }, [activeConversationId, messages.length]);
+    stickToBottom.current = true;
+  }, [activeConversationId]);
+
+  // Only auto-scroll if the user is already near the bottom (or just sent
+  // something), so reading old messages isn't interrupted.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (el && stickToBottom.current) {
+      el.scrollTop = el.scrollHeight;
+    }
+  }, [messages.length]);
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    stickToBottom.current =
+      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+  };
 
   const handleSubmit = (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
+    const text = draft.trim();
+    if (!text || !activeConversationId) return;
 
-    const content = draft.trim();
-
-    if (!content || !activeConversationId || isLoadingHistory) {
-      return;
-    }
-
-    sendMessage(content);
+    stickToBottom.current = true;
+    sendMessage(text);
     setDraft("");
   };
 
-  if (!activeConversationId) {
+  if (isLoadingHistory && !activeConversationId) {
     return (
-      <div className="flex h-full items-center justify-center p-6">
-        <div className="flex flex-col items-center gap-3 text-center">
-          {isLoadingHistory ? (
-            <>
-              <div className="size-5 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-900 dark:border-zinc-700 dark:border-t-white" />
+      <div className="flex h-full items-center justify-center">
+        <p className="text-sm text-[var(--muted)]">Loading conversation…</p>
+      </div>
+    );
+  }
 
-              <p className="text-sm text-zinc-500 dark:text-zinc-400">
-                Loading conversation…
-              </p>
-            </>
-          ) : (
-            <>
-              <p className="text-sm text-red-600 dark:text-red-400">
-                {sendError ?? "Could not open conversation."}
-              </p>
-
-              <button
-                type="button"
-                onClick={() => void openDM(otherUserId)}
-                className="rounded-full border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-800 transition-colors hover:bg-zinc-100 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-              >
-                Try again
-              </button>
-            </>
-          )}
-        </div>
+  // Opening the chat failed: show the error and a retry, not a fake-working form.
+  if (!activeConversationId && sendError) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-6">
+        <p className="text-center text-sm text-[var(--danger)]">{sendError}</p>
+        <button
+          onClick={() => openDM(otherUserId)}
+          className="rounded-full bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-[var(--accent-fg)] hover:opacity-90"
+        >
+          Try again
+        </button>
       </div>
     );
   }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      {/* Messages */}
-      <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-5 sm:px-5">
-        {messages.length === 0 && (
-          <div className="flex justify-center pt-12">
-            <p className="rounded-full bg-zinc-100 px-4 py-2 text-center text-sm text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400">
-              No messages yet. Say hi.
-            </p>
-          </div>
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-3"
+      >
+        {rows.length === 0 && (
+          <p className="pt-8 text-center text-sm text-[var(--muted)]">
+            No messages yet. Say hi.
+          </p>
         )}
 
-        {messages.map((message) => {
-          const isOwn = message.senderId === currentUserId;
-
-          return (
+        {rows.map((row) =>
+          row.kind === "day" ? (
             <div
-              key={message.id}
-              className={`flex ${isOwn ? "justify-end" : "justify-start"}`}
+              key={row.key}
+              className="my-3 text-center text-xs text-[var(--muted)]"
             >
-              <div
-                className={`flex max-w-[85%] flex-col sm:max-w-[75%] ${
-                  isOwn ? "items-end" : "items-start"
-                }`}
-              >
-                {/* Message bubble */}
-                <div
-                  className={`wrap-break-word whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed shadow-sm ${
-                    isOwn
-                      ? "rounded-br-md bg-lime-400 text-zinc-950"
-                      : "rounded-bl-md bg-zinc-100 text-zinc-900 dark:bg-zinc-600 dark:text-zinc-100"
-                  }`}
-                >
-                  {message.content}
-                </div>
-
-                {/* Timestamp */}
-                <time
-                  dateTime={message.createdAt}
-                  className="mt-1 px-1 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400"
-                >
-                  {formatMessageTime(message.createdAt)}
-                </time>
-              </div>
+              {row.label}
             </div>
-          );
-        })}
-
-        <div ref={bottomRef} />
+          ) : (
+            <MessageBubble
+              key={row.key}
+              message={row.message}
+              isOwn={row.message.senderId === currentUserId}
+              startsGroup={row.startsGroup}
+            />
+          )
+        )}
       </div>
 
-      {/* Error */}
       {sendError && (
-        <p
-          role="alert"
-          className="px-4 pb-2 text-sm text-red-600 dark:text-red-400"
-        >
+        <p className="shrink-0 px-4 pb-2 text-sm text-[var(--danger)]">
           {sendError}
         </p>
       )}
 
-      {/* Composer */}
       <form
         onSubmit={handleSubmit}
-        className="flex shrink-0 items-end gap-2 border-t border-zinc-200 bg-transparent p-3 dark:border-zinc-800 sm:p-4"
+        className="flex shrink-0 gap-2 border-t border-[var(--border)] px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       >
         <input
           type="text"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           placeholder={isLoadingHistory ? "Loading conversation…" : "Message…"}
+          aria-label="Message"
           autoComplete="off"
           disabled={!activeConversationId || isLoadingHistory}
           className="min-w-0 flex-1 rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-[15px] text-[var(--text)] outline-none transition-colors placeholder:text-[var(--muted)] focus:border-[var(--accent-text)] disabled:cursor-not-allowed disabled:opacity-50"
         />
-
         <button
           type="submit"
-          disabled={!activeConversationId || isLoadingHistory || !draft.trim()}
-          className="shrink-0 rounded-2xl bg-lime-500 px-5 py-3 text-sm font-semibold text-white transition-colors hover:bg-lime-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-lime-500 disabled:cursor-not-allowed disabled:opacity-40 dark:bg-lime-600 dark:text-lime-100 dark:hover:bg-lime-700"
+          disabled={!draft.trim() || !activeConversationId}
+          className="rounded-2xl bg-[var(--accent)] px-5 py-2 text-sm font-semibold text-[var(--accent-fg)] transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
         >
           Send
         </button>

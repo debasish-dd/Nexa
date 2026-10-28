@@ -1,7 +1,8 @@
 import { create } from "zustand";
 import { getSocket } from "@/libs/socket/client";
-import { createOrGetDM, getMessageHistory } from "@/libs/dm/api";
-import type { Message } from "@/types/chat";
+import { createOrGetDM, getInbox, getMessageHistory } from "@/libs/dm/api";
+import type { InboxItem, Message } from "@/types/chat";
+
 
 
 
@@ -12,9 +13,15 @@ type ChatState = {
   isLoadingHistory: boolean;
   sendError: string | null;
 
+  inbox: InboxItem[];
+  isLoadingInbox: boolean;
+  inboxError: string | null;
+
   openDM: (otherUserId: string) => Promise<void>;
   sendMessage: (content: string) => void;
+  loadInbox: () => Promise<void>;
 };
+
 export const useChatStore = create<ChatState>((set, get) => {
   // Outside the state object, but inside the store initializer.
   // Persists across calls to openDM().
@@ -25,13 +32,16 @@ export const useChatStore = create<ChatState>((set, get) => {
     messages: {},
     isLoadingHistory: false,
     sendError: null,
+    inbox: [],
+    isLoadingInbox: false,
+    inboxError: null,
 
     openDM: async (otherUserId) => {
       // Each new request invalidates all older requests.
 
       const requestId = ++openDMRequestId;
 
-      
+
 
       set({
         activeConversationId: null,
@@ -42,10 +52,10 @@ export const useChatStore = create<ChatState>((set, get) => {
       try {
         const { conversationId } = await createOrGetDM(otherUserId);
 
-        
+
 
         if (requestId !== openDMRequestId) {
-          
+
           return;
         }
 
@@ -89,10 +99,10 @@ export const useChatStore = create<ChatState>((set, get) => {
 
         const history = await getMessageHistory(conversationId);
 
-        
+
 
         if (requestId !== openDMRequestId) {
-          
+
           return;
         }
 
@@ -147,7 +157,7 @@ export const useChatStore = create<ChatState>((set, get) => {
       const conversationId = get().activeConversationId;
       const socket = getSocket();
 
-      
+
 
       if (!conversationId) {
         console.error("No active conversation");
@@ -167,13 +177,27 @@ export const useChatStore = create<ChatState>((set, get) => {
       });
     },
 
+    loadInbox: async () => {
+    set({ isLoadingInbox: true, inboxError: null });
+    try {
+      const inbox = await getInbox();
+      set({ inbox, isLoadingInbox: false });
+    } catch (error) {
+      set({
+        isLoadingInbox: false,
+        inboxError:
+          error instanceof Error ? error.message : "Failed to load conversations",
+      });
+    }
+  },
+
   };
 
 
 });
 
 getSocket().on("message:new", (message: Message) => {
-  
+
 
   useChatStore.setState((state) => {
     const existing = state.messages[message.conversationId] ?? [];
