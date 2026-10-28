@@ -13,6 +13,20 @@ export interface Conversation {
     type: ConversationType;
 }
 
+export interface InboxRow {
+    conversationId: string;
+    otherUserId: string;
+    otherUsername: string;
+    otherUserAvatar: string | null;
+    lastMessageId: string;
+    lastMessageSenderId: string;
+    lastMessageContent: string | null; // null when the message was deleted
+    lastMessageCreatedAt: Date;
+    lastMessageDeletedAt: Date | null;
+}
+
+
+
 export const createConversation = async (
     type: ConversationType,
     client?: PoolClient,
@@ -89,4 +103,49 @@ export const deleteConversation = async (
     );
 
     return result.rowCount === 1;
+};
+
+export const getInboxForUser = async (
+    userId: string,
+    limit: number,
+): Promise<InboxRow[]> => {
+    const result = await pool.query<InboxRow>(
+        `
+        SELECT
+            c.id AS "conversationId",
+            other.id AS "otherUserId",
+            other.username AS "otherUsername",
+            other.avatar_url AS "otherUserAvatar",
+            lm.id AS "lastMessageId",
+            lm.sender_id AS "lastMessageSenderId",
+            CASE WHEN lm.deleted_at IS NULL THEN lm.content END
+                AS "lastMessageContent",
+            lm.created_at AS "lastMessageCreatedAt",
+            lm.deleted_at AS "lastMessageDeletedAt"
+        FROM conversation_participants me
+        JOIN conversations c
+            ON c.id = me.conversation_id
+           AND c.type = 'dm'
+        JOIN dm_pairs dp
+            ON dp.conversation_id = c.id
+        JOIN users other
+            ON other.id = CASE
+                WHEN dp.user1_id = me.user_id THEN dp.user2_id
+                ELSE dp.user1_id
+            END
+        JOIN LATERAL (
+            SELECT m.id, m.sender_id, m.content, m.created_at, m.deleted_at
+            FROM messages m
+            WHERE m.conversation_id = c.id
+            ORDER BY m.created_at DESC, m.id DESC
+            LIMIT 1
+        ) lm ON TRUE
+        WHERE me.user_id = $1
+        ORDER BY lm.created_at DESC
+        LIMIT $2
+        `,
+        [userId, limit],
+    );
+
+    return result.rows;
 };
