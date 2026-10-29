@@ -4,7 +4,7 @@ import asyncHandler from "../utils/async-handler";
 import { ApiError } from "../utils/api-error";
 import { ApiResponse } from "../utils/api-response"; // ADJUST: copy from auth.controllers.ts
 import { searchUsersQuerySchema } from "../validations/user.validation";
-import { searchUsers, type UserSearchRow } from "../repositories/users/user-search.repository";
+import { findPublicUserById, searchUsers, type UserSearchRow } from "../repositories/users/user-search.repository";
 
 // Postgres LIKE treats % and _ as wildcards (and \ as the escape character).
 // Usernames can contain _, so escape all three to match them literally.
@@ -62,3 +62,23 @@ export const searchUsersController = asyncHandler(async (req: Request, res: Resp
         })
     );
 });
+
+export const getUserByIdController = asyncHandler(
+    async (req: Request, res: Response) => {
+        const { id } = req.params;
+
+        if (!id || Array.isArray(id)) {
+            throw new ApiError(400, "Invalid user ID");
+        }
+
+        const user = await findPublicUserById(id);
+
+        if (!user) {
+            throw new ApiError(404, "User not found");
+        }
+
+        return res
+            .status(200)
+            .json(new ApiResponse(200, "User fetched successfully", { user }));
+    },
+);

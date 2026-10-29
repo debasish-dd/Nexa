@@ -11,3 +11,8 @@ export type PublicUser = {
 export type UserSearchResponse = {
   users: PublicUser[];
 };
+// Returned by GET /users/:id. Public fields only.
+export type PublicUserProfile = PublicUser & {
+  displayName: string | null;
+  avatarUrl: string | null;
+};

@@ -1,10 +1,16 @@
 "use client";
 
 import { useState, type SubmitEvent } from "react";
-import { DMWindow } from "./DMWindow";
-import { searchUsers } from "@/libs/users/api";
+import Link from "next/link";
+import { ApiRequestError } from "@/libs/http/client";
+import { getUserById, searchUsers } from "@/libs/users/api";
+import { useAuthStore } from "@/store/authStore";
 import type { PublicUser } from "@/types/user";
 import { Avatar } from "@/components/layout/Avatar";
+
+// A pasted user ID looks like e725574a-1e7b-45a1-b8df-1b75b14357f2
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export function UserFinder() {
   const [query, setQuery] = useState("");
@@ -12,9 +18,16 @@ export function UserFinder() {
   // true only after a search finished successfully, so "No users found"
   // doesn't flash up before the user has searched for anything
   const [hasSearched, setHasSearched] = useState(false);
-  const [chattingWith, setChattingWith] = useState<PublicUser | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSearching, setIsSearching] = useState(false);
+
+  const currentUserId = useAuthStore((s) => s.user?.id);
+
+  const resetResults = () => {
+    setResults([]);
+    setHasSearched(false);
+    setError(null);
+  };
 
   const handleSearch = async (e: SubmitEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -24,19 +37,33 @@ export function UserFinder() {
     if (!searchQuery || isSearching) return;
 
     setIsSearching(true);
-    setError(null);
-    setResults([]);
-    setHasSearched(false);
+    resetResults();
 
     try {
-      const users = await searchUsers(searchQuery);
-      setResults(users);
+      if (UUID_PATTERN.test(searchQuery)) {
+        // Looks like a user ID: look that exact user up.
+        const user = await getUserById(searchQuery);
+        setResults([user]);
+      } else {
+        setResults(await searchUsers(searchQuery));
+      }
       setHasSearched(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      if (err instanceof ApiRequestError && err.status === 404) {
+        // A valid-looking ID that nobody has: same as an empty search.
+        setHasSearched(true);
+      } else {
+        setError(err instanceof Error ? err.message : "Something went wrong");
+      }
     } finally {
       setIsSearching(false);
     }
+  };
+
+  // The dropdown stays mounted while the route changes, so clear it on click.
+  const handleOpenChat = () => {
+    setQuery("");
+    resetResults();
   };
 
   return (
@@ -47,12 +74,10 @@ export function UserFinder() {
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
-            setResults([]);
-            setHasSearched(false);
-            setError(null);
+            resetResults();
           }}
-          placeholder="Find someone by username"
-          aria-label="Find someone by username"
+          placeholder="Find someone by username or ID"
+          aria-label="Find someone by username or ID"
           className="h-10 min-w-0 flex-1 rounded-full border border-(--border) bg-(--surface) px-3 text-sm text-(--text) outline-none placeholder:text-(--muted) focus:border-(--accent-text) focus:ring-1 focus:ring-(--accent-text) sm:px-4"
         />
 
@@ -66,7 +91,7 @@ export function UserFinder() {
       </form>
 
       {/* Search results dropdown */}
-      {!chattingWith && (error !== null || hasSearched) && (
+      {(error !== null || hasSearched) && (
         <div className="absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-2 shadow-xl sm:p-3">
           {error !== null && (
             <p className="px-3 py-2 text-sm text-[var(--danger)]">{error}</p>
@@ -93,40 +118,23 @@ export function UserFinder() {
                     </span>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={() => setChattingWith(user)}
-                    className="shrink-0 rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent-fg)] transition-opacity hover:opacity-90"
-                  >
-                    Chat
-                  </button>
+                  {user.id === currentUserId ? (
+                    <span className="shrink-0 px-4 py-2 text-sm text-[var(--muted)]">
+                      You
+                    </span>
+                  ) : (
+                    <Link
+                      href={`/messages/${user.id}`}
+                      onClick={handleOpenChat}
+                      className="shrink-0 rounded-full bg-[var(--accent)] px-4 py-2 text-sm font-semibold text-[var(--accent-fg)] transition-opacity hover:opacity-90"
+                    >
+                      Chat
+                    </Link>
+                  )}
                 </li>
               ))}
             </ul>
           )}
-        </div>
-      )}
-
-      {/* Chat window overlay */}
-      {chattingWith && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-2 flex h-[28rem] max-h-[calc(100dvh-7rem)] min-h-0 flex-col overflow-hidden rounded-2xl border border-[var(--border)] bg-[var(--surface)] shadow-xl md:w-[28rem]">
-          <div className="flex shrink-0 items-center justify-between border-b border-[var(--border)] px-3 py-3 sm:px-4">
-            <span className="truncate text-sm font-semibold">
-              {chattingWith.username}
-            </span>
-
-            <button
-              type="button"
-              onClick={() => setChattingWith(null)}
-              className="shrink-0 rounded-full px-3 py-1.5 text-sm text-[var(--muted)] transition-colors hover:bg-[var(--surface-2)] hover:text-[var(--text)]"
-            >
-              ← Back
-            </button>
-          </div>
-
-          <div className="min-h-0 flex-1 overflow-hidden">
-            <DMWindow otherUserId={chattingWith.id} />
-          </div>
         </div>
       )}
     </div>

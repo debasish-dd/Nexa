@@ -6,7 +6,15 @@ import { MOBILE_NAV_HREFS, NAV_ITEMS } from "./nav";
 
 export function MobileNav() {
   const pathname = usePathname();
-  const items = NAV_ITEMS.filter((item) => MOBILE_NAV_HREFS.includes(item.href));
+  const isConversationPage = /^\/messages\/[^/]+\/?$/.test(pathname);
+
+  const items = NAV_ITEMS.filter((item) =>
+    MOBILE_NAV_HREFS.includes(item.href)
+  );
+
+  if (isConversationPage) {
+    return null;
+  }
 
   return (
     <nav
@@ -14,14 +22,18 @@ export function MobileNav() {
       className="fixed inset-x-0 bottom-0 z-30 flex border-t border-[var(--border)] bg-[var(--surface)] pb-[env(safe-area-inset-bottom)] md:hidden"
     >
       {items.map(({ href, label, icon: Icon }) => {
-        const active = pathname === href || pathname.startsWith(`${href}/`);
+        const active =
+          pathname === href || pathname.startsWith(`${href}/`);
+
         return (
           <Link
             key={href}
             href={href}
             aria-current={active ? "page" : undefined}
             className={`flex flex-1 flex-col items-center gap-1 py-2.5 text-[11px] font-medium transition-colors ${
-              active ? "text-[var(--accent-text)]" : "text-[var(--muted)]"
+              active
+                ? "text-[var(--accent-text)]"
+                : "text-[var(--muted)]"
             }`}
           >
             <Icon size={22} />

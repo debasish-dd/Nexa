@@ -1,53 +1,91 @@
+
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { useChatStore } from "@/store/chatStore";
-// ⚠️ Adjust this import to wherever your DMWindow file lives.
+import { getUserById } from "@/libs/users/api";
+import type { PublicUserProfile } from "@/types/user";
 import { DMWindow } from "@/components/chats/DMWindow";
 
 export default function ChatPage() {
   const { userId } = useParams<{ userId: string }>();
 
-  // Found when you arrive from the inbox. For a brand-new chat or after a
-  // page refresh, the inbox has nothing for this user, so we use fallbacks.
-  const otherUser = useChatStore(
-    (s) => s.inbox.find((item) => item.otherUser.id === userId)?.otherUser
+  const [fetchedUser, setFetchedUser] =
+    useState<PublicUserProfile | null>(null);
+
+  const inboxUser = useChatStore((s) =>
+    s.inbox.find((item) => item.otherUser.id === userId)?.otherUser
   );
 
-  const name = otherUser?.username ?? "Conversation";
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!inboxUser) {
+      getUserById(userId)
+        .then((user) => {
+          if (!cancelled) setFetchedUser(user);
+        })
+        .catch(() => {
+          if (!cancelled) setFetchedUser(null);
+        });
+    }
+
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, inboxUser]);
+
+  const fetched = fetchedUser?.id === userId ? fetchedUser : null;
+
+  const name =
+    inboxUser?.username ??
+    fetched?.displayName ??
+    fetched?.username ??
+    "Conversation";
+
+  const avatarUrl =
+    inboxUser?.avatarUrl ?? fetched?.avatarUrl ?? null;
 
   return (
-    <div className="mx-auto flex h-dvh w-full max-w-2xl flex-col">
-      <header className="flex items-center gap-3 border-b border-[var(--border)] px-3 py-3">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-[var(--surface)] text-[var(--text)] md:border-x md:border-[var(--border)]">
+      <header className="flex shrink-0 items-center gap-3 border-b border-[var(--border)] bg-[var(--surface)] px-3 py-3 text-[var(--text)] sm:px-4">
         <Link
           href="/messages"
           aria-label="Back to messages"
-          className="rounded-full px-2 py-1 text-xl text-[var(--text)] hover:bg-[var(--surface-2)]"
+          className="flex size-10 shrink-0 items-center justify-center rounded-full text-xl text-[var(--text)] transition-colors hover:bg-[var(--surface-2)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent-text)]"
         >
-          ←
+          <span aria-hidden="true">←</span>
         </Link>
 
-        {otherUser?.avatarUrl ? (
+        {avatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={otherUser.avatarUrl}
+            src={avatarUrl}
             alt=""
-            className="h-9 w-9 shrink-0 rounded-full object-cover"
+            className="size-10 shrink-0 rounded-full object-cover"
           />
         ) : (
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-[var(--accent-fg)]">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] text-sm font-semibold text-[var(--accent-fg)]">
             {name.charAt(0).toUpperCase()}
           </div>
         )}
 
-        <h1 className="truncate font-semibold text-[var(--text)]">{name}</h1>
+        <div className="min-w-0 flex-1">
+          <h1 className="truncate text-sm font-semibold text-[var(--text)] sm:text-base">
+            {name}
+          </h1>
+
+          <p className="text-xs text-[var(--muted)]">
+            Direct message
+          </p>
+        </div>
       </header>
 
-      <div className="min-h-0 flex-1">
-        {/* key resets the draft text when you move to a different chat */}
+      <main className="min-h-0 flex-1 overflow-hidden">
         <DMWindow key={userId} otherUserId={userId} />
-      </div>
+      </main>
     </div>
   );
 }

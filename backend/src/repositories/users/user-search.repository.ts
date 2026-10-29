@@ -8,6 +8,14 @@ export interface UserSearchRow {
     sort_key: string;
 }
 
+export interface PublicUserProfile {
+    id: string;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+}
+
+
 const pool = getPool();
 
 export async function searchUsers(params: {
@@ -59,3 +67,39 @@ export async function searchUsers(params: {
 
     return result.rows;
 }
+
+
+export const findPublicUserById = async (
+    userId: string,
+): Promise<PublicUserProfile | null> => {
+    try {
+        const result = await pool.query<PublicUserProfile>(
+            `
+            SELECT
+                id,
+                username,
+                display_name AS "displayName",
+                avatar_url AS "avatarUrl"
+            FROM users
+            WHERE id = $1
+            LIMIT 1
+            `,
+            [userId],
+        );
+
+        return result.rows[0] ?? null;
+    } catch (error) {
+        // 22P02 = "invalid input syntax" (a malformed id in the URL).
+        // Treat it as "not found" instead of crashing with a 500.
+        if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === "22P02"
+        ) {
+            return null;
+        }
+        throw error;
+    }
+};
+

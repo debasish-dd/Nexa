@@ -20,7 +20,10 @@ type ChatState = {
   openDM: (otherUserId: string) => Promise<void>;
   sendMessage: (content: string) => void;
   loadInbox: () => Promise<void>;
+    closeDM: () => void;
 };
+
+let openRequestId = 0;
 
 export const useChatStore = create<ChatState>((set, get) => {
   // Outside the state object, but inside the store initializer.
@@ -36,122 +39,67 @@ export const useChatStore = create<ChatState>((set, get) => {
     isLoadingInbox: false,
     inboxError: null,
 
-    openDM: async (otherUserId) => {
-      // Each new request invalidates all older requests.
+     openDM: async (otherUserId) => {
+    const requestId = ++openRequestId;
+    const isStale = () => requestId !== openRequestId;
 
-      const requestId = ++openDMRequestId;
+    set({
+      activeConversationId: null,
+      isLoadingHistory: true,
+      sendError: null,
+    });
 
+    try {
+      const { conversationId } = await createOrGetDM(otherUserId);
+      if (isStale()) return;
 
+      const history = await getMessageHistory(conversationId);
+      if (isStale()) return;
+
+      set((state) => {
+        const existingMessages = state.messages[conversationId] ?? [];
+
+        // Merge history + any realtime messages that arrived while
+        // history was loading.
+        const merged = [...history];
+
+        for (const message of existingMessages) {
+          if (!merged.some((m) => m.id === message.id)) {
+            merged.push(message);
+          }
+        }
+
+        return {
+          activeConversationId: conversationId,
+          messages: {
+            ...state.messages,
+            [conversationId]: merged,
+          },
+          isLoadingHistory: false,
+        };
+      });
+    } catch (error) {
+      // A stale call must not touch loading or error state: a newer call owns them.
+      if (isStale()) return;
 
       set({
-        activeConversationId: null,
-        isLoadingHistory: true,
-        sendError: null,
+        isLoadingHistory: false,
+        sendError:
+          error instanceof Error
+            ? error.message
+            : "Failed to open conversation",
       });
+    }
+  },
 
-      try {
-        const { conversationId } = await createOrGetDM(otherUserId);
-
-
-
-        if (requestId !== openDMRequestId) {
-
-          return;
-        }
-
-        // Join the room and wait for the server to confirm membership.
-        const socket = getSocket();
-
-        await new Promise<void>((resolve, reject) => {
-          socket.timeout(5000).emit(
-            "conversation:join",
-            { conversationId },
-            (
-              error: Error | null,
-              response?: {
-                ok: boolean;
-                message?: string;
-              },
-            ) => {
-              if (error) {
-                reject(
-                  new Error("Timed out joining conversation"),
-                );
-                return;
-              }
-
-              if (!response?.ok) {
-                reject(
-                  new Error(
-                    response?.message ??
-                    "Could not join conversation",
-                  ),
-                );
-                return;
-              }
-
-              resolve();
-            },
-          );
-        });
-
-        if (requestId !== openDMRequestId) return;
-
-        const history = await getMessageHistory(conversationId);
-
-
-
-        if (requestId !== openDMRequestId) {
-
-          return;
-        }
-
-        set((state) => {
-          const existingMessages =
-            state.messages[conversationId] ?? [];
-
-          // Merge history and realtime messages without duplicates.
-          const mergedMessages = new Map<string, Message>();
-
-          for (const message of history) {
-            mergedMessages.set(message.id, message);
-          }
-
-          for (const message of existingMessages) {
-            mergedMessages.set(message.id, message);
-          }
-
-          const orderedMessages = [...mergedMessages.values()].sort(
-            (a, b) =>
-              new Date(a.createdAt).getTime() -
-              new Date(b.createdAt).getTime(),
-          );
-
-          return {
-            activeConversationId: conversationId,
-            messages: {
-              ...state.messages,
-              [conversationId]: orderedMessages,
-            },
-            isLoadingHistory: false,
-            sendError: null,
-          };
-        });
-      } catch (error) {
-        console.error("[openDM] Failed", error);
-
-        if (requestId !== openDMRequestId) return;
-
-        set({
-          activeConversationId: null,
-          isLoadingHistory: false,
-          sendError:
-            error instanceof Error
-              ? error.message
-              : "Failed to open conversation",
-        });
-      }
-    },
+  closeDM: () => {
+    openRequestId++; // cancels any openDM still in flight
+    set({
+      activeConversationId: null,
+      isLoadingHistory: false,
+      sendError: null,
+    });
+  },
 
     sendMessage: (content) => {
       const conversationId = get().activeConversationId;
