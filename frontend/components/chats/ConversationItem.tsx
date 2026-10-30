@@ -17,6 +17,8 @@ export function ConversationItem({
   currentUserId?: string;
 }) {
   const { otherUser, lastMessage } = item;
+    const unread = item.unreadCount > 0;
+  const unreadLabel = item.unreadCount > 99 ? "99+" : String(item.unreadCount);
   const isOwn = lastMessage.senderId === currentUserId;
 
   const preview = lastMessage.isDeleted
@@ -42,22 +44,37 @@ export function ConversationItem({
         </div>
       )}
 
-      <div className="min-w-0 flex-1">
+            <div className="min-w-0 flex-1">
         <div className="flex items-baseline justify-between gap-2">
-          <p className="truncate font-semibold text-[var(--text)]">
+          <p
+            className={`truncate text-[var(--text)] ${
+              unread ? "font-bold" : "font-semibold"
+            }`}
+          >
             {otherUser.username}
           </p>
-          <span className="shrink-0 text-xs text-[var(--muted)]">
+          <span
+            className={`shrink-0 text-xs ${
+              unread ? "text-[var(--text)]" : "text-[var(--muted)]"
+            }`}
+          >
             {formatTime(lastMessage.createdAt)}
           </span>
         </div>
-        <p
-          className={`truncate text-sm text-[var(--muted)] ${
-            lastMessage.isDeleted ? "italic" : ""
-          }`}
-        >
-          {preview}
-        </p>
+        <div className="flex items-center justify-between gap-2">
+          <p
+            className={`truncate text-sm ${
+              unread ? "font-medium text-[var(--text)]" : "text-[var(--muted)]"
+            } ${lastMessage.isDeleted ? "italic" : ""}`}
+          >
+            {preview}
+          </p>
+          {unread && (
+            <span className="flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-[var(--accent)] px-1.5 text-xs font-semibold text-[var(--accent-fg)]">
+              {unreadLabel}
+            </span>
+          )}
+        </div>
       </div>
     </Link>
   );

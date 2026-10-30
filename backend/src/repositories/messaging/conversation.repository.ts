@@ -23,6 +23,7 @@ export interface InboxRow {
     lastMessageContent: string | null; // null when the message was deleted
     lastMessageCreatedAt: Date;
     lastMessageDeletedAt: Date | null;
+    unreadCount: number;
 }
 
 
@@ -109,6 +110,8 @@ export const getInboxForUser = async (
     userId: string,
     limit: number,
 ): Promise<InboxRow[]> => {
+    // COUNT(*)::int matters: COUNT returns bigint, which pg hands back as a string.
+    // LIMIT 100 inside the count caps the work; the UI shows 99+.
     const result = await pool.query<InboxRow>(
         `
         SELECT
@@ -121,7 +124,22 @@ export const getInboxForUser = async (
             CASE WHEN lm.deleted_at IS NULL THEN lm.content END
                 AS "lastMessageContent",
             lm.created_at AS "lastMessageCreatedAt",
-            lm.deleted_at AS "lastMessageDeletedAt"
+            lm.deleted_at AS "lastMessageDeletedAt",
+            (
+                SELECT COUNT(*)::int
+                FROM (
+                    SELECT 1
+                    FROM messages um
+                    WHERE um.conversation_id = c.id
+                      AND um.sender_id <> me.user_id
+                      AND um.deleted_at IS NULL
+                      AND (
+                          rm.id IS NULL
+                          OR (um.created_at, um.id) > (rm.created_at, rm.id)
+                      )
+                    LIMIT 100
+                ) unread
+            ) AS "unreadCount"
         FROM conversation_participants me
         JOIN conversations c
             ON c.id = me.conversation_id
@@ -133,6 +151,8 @@ export const getInboxForUser = async (
                 WHEN dp.user1_id = me.user_id THEN dp.user2_id
                 ELSE dp.user1_id
             END
+        LEFT JOIN messages rm
+            ON rm.id = me.last_read_message_id
         JOIN LATERAL (
             SELECT m.id, m.sender_id, m.content, m.created_at, m.deleted_at
             FROM messages m

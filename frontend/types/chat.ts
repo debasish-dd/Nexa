@@ -18,6 +18,7 @@ export type Message = {
 
 export interface InboxItem {
   conversationId: string;
+  unreadCount: number;
   otherUser: {
     id: string;
     username: string;

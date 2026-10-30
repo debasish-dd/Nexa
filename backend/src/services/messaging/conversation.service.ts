@@ -4,11 +4,15 @@ import {
     getInboxForUser,
 } from "../../repositories/messaging/conversation.repository";
 import { ApiError } from "../../utils/api-error";
-
+import {
+    advanceLastReadMessage,
+    isParticipant,
+} from "../../repositories/messaging/participant.repository";
 
 
 const DEFAULT_INBOX_LIMIT = 30;
 const MAX_INBOX_LIMIT = 100;
+
 
 export const getConversation = async (conversationId: string) => {
     return findConversationById(conversationId);
@@ -33,6 +37,7 @@ export const getInbox = async (
 
     return rows.map((row) => ({
         conversationId: row.conversationId,
+        unreadCount: row.unreadCount,
         otherUser: {
             id: row.otherUserId,
             username: row.otherUsername,
@@ -47,3 +52,34 @@ export const getInbox = async (
         },
     }));
 };
+
+export const markConversationRead = async (
+    conversationId: string,
+    userId: string,
+    messageId: string,
+) => {
+    const participant = await isParticipant(conversationId, userId);
+
+    if (!participant) {
+        throw new ApiError(
+            403,
+            "User is not a participant in this conversation",
+        );
+    }
+
+    try {
+        await advanceLastReadMessage(conversationId, userId, messageId);
+    } catch (error) {
+        // 22P02 = malformed id
+        if (
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === "22P02"
+        ) {
+            throw new ApiError(400, "Invalid message id");
+        }
+        throw error;
+    }
+};
+

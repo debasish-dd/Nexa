@@ -69,7 +69,12 @@ export async function deleteMessage(
   return res.data.data;
 }
 
-
+export async function markConversationRead(
+  conversationId: string,
+  messageId: string
+): Promise<void> {
+  await http.post(`/conversations/${conversationId}/read`, { messageId });
+}
 
 
 // ⚠️ Same mount-path assumption: the conversation router lives at /conversations.

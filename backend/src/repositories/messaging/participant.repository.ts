@@ -194,3 +194,45 @@ export const getConversationIdsForUser = async (
     return result.rows.map(row => row.conversation_id);
 
 }
+
+// Moves the read marker forward to `messageId`, never backward, so two requests
+// arriving out of order can't un-read anything. Returns false if nothing changed
+// (not a participant, message not in this chat, or marker already at or past it).
+export const advanceLastReadMessage = async (
+    conversationId: string,
+    userId: string,
+    messageId: string,
+): Promise<boolean> => {
+    const result = await pool.query(
+        `
+        UPDATE conversation_participants cp
+        SET last_read_message_id = m.id
+        FROM messages m
+        WHERE cp.conversation_id = $1
+          AND cp.user_id = $2
+          AND m.id = $3
+          AND m.conversation_id = $1
+          AND (
+              cp.last_read_message_id IS NULL
+              OR NOT EXISTS (
+                  SELECT 1 FROM messages cur
+                  WHERE cur.id = cp.last_read_message_id
+              )
+              OR m.created_at > (
+                  SELECT cur.created_at FROM messages cur
+                  WHERE cur.id = cp.last_read_message_id
+              )
+              OR (
+                  m.created_at = (
+                      SELECT cur.created_at FROM messages cur
+                      WHERE cur.id = cp.last_read_message_id
+                  )
+                  AND m.id > cp.last_read_message_id
+              )
+          )
+        `,
+        [conversationId, userId, messageId],
+    );
+
+    return result.rowCount === 1;
+};
