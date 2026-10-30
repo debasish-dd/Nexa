@@ -40,10 +40,15 @@ export const sendMessage = asyncHandler(async (req: Request, res: Response) => {
 });
 
 /**
- * GET /conversations/:conversationId/messages?limit=50
+ * GET /conversations/:conversationId/messages?limit=50&before=<messageId>
  */
 export const getMessages = asyncHandler(async (req: Request, res: Response) => {
     const { conversationId } = req.params;
+
+    if (!conversationId) {
+        throw new ApiError(400, "conversationId is required");
+    }
+
     const userId = req.user?.userId;
 
     if (!userId) {
@@ -57,7 +62,16 @@ export const getMessages = asyncHandler(async (req: Request, res: Response) => {
         throw new ApiError(400, "limit must be a number");
     }
 
-    const messages = await getMessagesService(conversationId, userId, parsedLimit);
+    const rawBefore = req.query.before;
+    const before =
+        typeof rawBefore === "string" && rawBefore ? rawBefore : undefined;
+
+    const messages = await getMessagesService(
+        conversationId,
+        userId,
+        parsedLimit,
+        before,
+    );
 
     return res
         .status(200)
@@ -70,6 +84,10 @@ export const getMessages = asyncHandler(async (req: Request, res: Response) => {
  */
 export const editMessage = asyncHandler(async (req: Request, res: Response) => {
     const { messageId } = req.params;
+    if (!messageId) {
+        throw new ApiError(400, "messageId is required");
+    }
+
     const { content } = req.body;
     const userId = req.user?.userId;
 

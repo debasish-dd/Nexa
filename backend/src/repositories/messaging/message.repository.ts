@@ -72,7 +72,25 @@ export const findMessageById = async (
 export const getMessages = async (
     conversationId: string,
     limit: number = 50,
+    beforeMessageId?: string,
 ): Promise<Message[]> => {
+    // With a cursor: only messages older than that one. The cursor message must
+    // belong to the same conversation, so ids from other chats are useless.
+    // This is a constant string, not user input, so it's safe to splice in.
+    const cursorFilter = beforeMessageId
+        ? `
+          AND (created_at, id) < (
+              SELECT created_at, id
+              FROM messages
+              WHERE id = $3
+                AND conversation_id = $1
+          )`
+        : "";
+
+    const params: unknown[] = beforeMessageId
+        ? [conversationId, limit, beforeMessageId]
+        : [conversationId, limit];
+
     const result = await pool.query<Message>(
         `
         SELECT
@@ -86,10 +104,11 @@ export const getMessages = async (
         FROM messages
         WHERE conversation_id = $1
           AND deleted_at IS NULL
-        ORDER BY created_at DESC
+          ${cursorFilter}
+        ORDER BY created_at DESC, id DESC
         LIMIT $2
         `,
-        [conversationId, limit],
+        params,
     );
 
     return result.rows;

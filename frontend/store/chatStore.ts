@@ -2,9 +2,18 @@ import { create } from "zustand";
 import { getSocket } from "@/libs/socket/client";
 import { createOrGetDM, getInbox, getMessageHistory } from "@/libs/dm/api";
 import type { InboxItem, Message } from "@/types/chat";
+import { useAuthStore } from "@/store/authStore";
 
 
 
+let lastSent: { conversationId: string; content: string } | null = null;
+
+
+
+type FailedDraft = {
+  conversationId: string;
+  content: string;
+};
 
 type ChatState = {
   activeConversationId: string | null;
@@ -12,34 +21,47 @@ type ChatState = {
 
   isLoadingHistory: boolean;
   sendError: string | null;
+  failedDraft: FailedDraft | null;
 
   inbox: InboxItem[];
   isLoadingInbox: boolean;
   inboxError: string | null;
-
-  openDM: (otherUserId: string) => Promise<void>;
-  sendMessage: (content: string) => void;
   inboxLoaded: boolean;
+
+    hasMore: Record<string, boolean>;
+  isLoadingOlder: boolean;
+  olderError: string | null;
+
+
+  loadOlderMessages: () => Promise<void>;
+
+  clearFailedDraft: () => void;
+  reset: () => void;
+  openDM: (otherUserId: string) => Promise<void>;
+  sendMessage: (content: string) => boolean;
   loadInbox: (options?: { silent?: boolean }) => Promise<void>;
   closeDM: () => void;
 };
 
 let openRequestId = 0;
 let inboxRequestId = 0;
+const HISTORY_PAGE_SIZE = 50;
 
 export const useChatStore = create<ChatState>((set, get) => {
-  // Outside the state object, but inside the store initializer.
-  // Persists across calls to openDM().
-  let openDMRequestId = 0;
+ 
 
   return {
     activeConversationId: null,
     messages: {},
     isLoadingHistory: false,
     sendError: null,
+    failedDraft: null,
     inbox: [],
     isLoadingInbox: false,
     inboxError: null,
+    hasMore: {},
+    isLoadingOlder: false,
+    olderError: null,
 
     openDM: async (otherUserId) => {
       const requestId = ++openRequestId;
@@ -49,6 +71,7 @@ export const useChatStore = create<ChatState>((set, get) => {
         activeConversationId: null,
         isLoadingHistory: true,
         sendError: null,
+        failedDraft: null
       });
 
       try {
@@ -100,32 +123,49 @@ export const useChatStore = create<ChatState>((set, get) => {
         activeConversationId: null,
         isLoadingHistory: false,
         sendError: null,
+        failedDraft: null
       });
     },
 
-    sendMessage: (content) => {
-      const conversationId = get().activeConversationId;
-      const socket = getSocket();
+      sendMessage: (content) => {
+    const conversationId = get().activeConversationId;
+    if (!conversationId) return false;
 
+    const socket = getSocket();
 
-
-      if (!conversationId) {
-        console.error("No active conversation");
-        return;
-      }
-
-      if (!socket.connected) {
-        console.error("Socket is disconnected");
-        return;
-      }
-
-      set({ sendError: null });
-
-      socket.emit("message:send", {
-        conversationId,
-        content,
+    // Socket.IO silently queues emits while disconnected. Refuse instead, so
+    // the text stays in the input and the user knows it didn't go out.
+    if (!socket.connected) {
+      set({
+        sendError: "Not connected to the server. Try again in a moment.",
       });
-    },
+      return false;
+    }
+
+    lastSent = { conversationId, content };
+    set({ sendError: null, failedDraft: null });
+    socket.emit("message:send", { conversationId, content });
+    return true;
+  },
+
+  clearFailedDraft: () => set({ failedDraft: null }),
+
+  reset: () => {
+    openRequestId++; // drop any openDM still in flight
+    inboxRequestId++; // drop any inbox load still in flight
+    lastSent = null;
+    set({
+      activeConversationId: null,
+      messages: {},
+      isLoadingHistory: false,
+      sendError: null,
+      failedDraft: null,
+      inbox: [],
+      isLoadingInbox: false,
+      inboxError: null,
+      inboxLoaded: false,
+    });
+  },
 
       inboxLoaded: false,
 
@@ -157,6 +197,71 @@ export const useChatStore = create<ChatState>((set, get) => {
       });
     }
   },
+
+  loadOlderMessages: async () => {
+      const state = get();
+      const conversationId = state.activeConversationId;
+
+      if (
+        !conversationId ||
+        state.isLoadingOlder ||
+        !state.hasMore[conversationId]
+      ) {
+        return;
+      }
+
+      const loaded = state.messages[conversationId] ?? [];
+      if (loaded.length === 0) return;
+
+      // The oldest message we hold is the cursor for "everything before this".
+      const oldest = loaded.reduce((min, m) =>
+        new Date(m.createdAt).getTime() < new Date(min.createdAt).getTime()
+          ? m
+          : min
+      );
+
+      const ticket = openRequestId; // changes if you switch chats, close, or log out
+      set({ isLoadingOlder: true, olderError: null });
+
+      try {
+        const page = await getMessageHistory(
+          conversationId,
+          HISTORY_PAGE_SIZE,
+          oldest.id
+        );
+        if (ticket !== openRequestId) return;
+
+        set((s) => {
+          const existing = s.messages[conversationId] ?? [];
+          const known = new Set(existing.map((m) => m.id));
+          const older = page.filter((m) => !known.has(m.id));
+
+          return {
+            messages: {
+              ...s.messages,
+              [conversationId]: [...older, ...existing],
+            },
+            // A full page means there are probably more. A short page means
+            // we reached the start of the conversation.
+            hasMore: {
+              ...s.hasMore,
+              [conversationId]: page.length >= HISTORY_PAGE_SIZE,
+            },
+            isLoadingOlder: false,
+          };
+        });
+      } catch (error) {
+        if (ticket !== openRequestId) return;
+
+        set({
+          isLoadingOlder: false,
+          olderError:
+            error instanceof Error
+              ? error.message
+              : "Failed to load older messages",
+        });
+      }
+    },
 
   };
 
@@ -215,11 +320,25 @@ getSocket().on("connect", () => {
   }
 });
 
-getSocket().on(
-  "message:error",
-  (payload: { message: string }) => {
-    useChatStore.setState({
-      sendError: payload.message,
-    });
-  },
-);
+getSocket().on("message:error", (payload: { message: string }) => {
+  useChatStore.setState({
+    sendError: payload.message,
+    // Hand the rejected text back so DMWindow can put it in the input again.
+    failedDraft: lastSent,
+  });
+});
+
+
+// When the logged-in user changes (logout, or a different account logging in),
+// wipe everything that belonged to the previous user.
+useAuthStore.subscribe((state, prevState) => {
+  if (state.user?.id === prevState.user?.id) return;
+
+  useChatStore.getState().reset();
+
+  // A socket opened with the old user's cookie stays that user's connection,
+  // so drop it and, if someone is logged in, reconnect with their cookie.
+  const socket = getSocket();
+  socket.disconnect();
+  if (state.user) socket.connect();
+});

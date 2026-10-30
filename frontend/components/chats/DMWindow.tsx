@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type SubmitEvent,
+} from "react";
 import { useChatStore } from "@/store/chatStore";
 import { useAuthStore } from "@/store/authStore";
 import type { Message } from "@/types/chat";
@@ -92,12 +99,27 @@ export function DMWindow({ otherUserId }: { otherUserId: string }) {
 
   const currentUserId = useAuthStore((s) => s.user?.id);
 
+  const failedDraft = useChatStore((s) => s.failedDraft);
+  const clearFailedDraft = useChatStore((s) => s.clearFailedDraft);
+
   const openDM = useChatStore((s) => s.openDM);
   const closeDM = useChatStore((s) => s.closeDM);
   const sendMessage = useChatStore((s) => s.sendMessage);
   const activeConversationId = useChatStore((s) => s.activeConversationId);
   const isLoadingHistory = useChatStore((s) => s.isLoadingHistory);
   const sendError = useChatStore((s) => s.sendError);
+  const loadOlderMessages = useChatStore((s) => s.loadOlderMessages);
+  const isLoadingOlder = useChatStore((s) => s.isLoadingOlder);
+  const olderError = useChatStore((s) => s.olderError);
+  const hasMore = useChatStore((s) =>
+    s.activeConversationId
+      ? (s.hasMore[s.activeConversationId] ?? false)
+      : false,
+  );
+
+  const restoreScrollHeight = useRef<number | null>(null);
+
+  
 
   const messages = useChatStore((s) =>
     s.activeConversationId
@@ -105,11 +127,47 @@ export function DMWindow({ otherUserId }: { otherUserId: string }) {
       : NO_MESSAGES,
   );
 
+  const requestOlder = () => {
+  const el = scrollRef.current;
+  if (!el) return;
+  // Remember how tall the list is now, so we can keep the user's place
+  // after the older messages are inserted above.
+  restoreScrollHeight.current = el.scrollHeight;
+  loadOlderMessages();
+};
+
+useLayoutEffect(() => {
+  const el = scrollRef.current;
+  if (!el || isLoadingOlder) return;
+
+  if (restoreScrollHeight.current !== null) {
+    // Older messages were just added above: shift down by their height so the
+    // same message stays under the user's eyes.
+    el.scrollTop += el.scrollHeight - restoreScrollHeight.current;
+    restoreScrollHeight.current = null;
+  }
+
+  // If the messages don't fill the screen, no scroll event can ever fire.
+  // Keep loading until they do, or there's nothing left.
+  if (hasMore && !olderError && el.scrollHeight <= el.clientHeight) {
+    requestOlder();
+  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [messages.length, isLoadingOlder]);
+
   useEffect(() => {
-  setDraft("");
-  openDM(otherUserId);
-  return () => closeDM();
-}, [openDM, closeDM, otherUserId]);
+    if (failedDraft && failedDraft.conversationId === activeConversationId) {
+      // Don't overwrite something the user has already started typing.
+      setDraft((current) => current || failedDraft.content);
+      clearFailedDraft();
+    }
+  }, [failedDraft, activeConversationId, clearFailedDraft]);
+
+  useEffect(() => {
+    setDraft("");
+    openDM(otherUserId);
+    return () => closeDM();
+  }, [openDM, closeDM, otherUserId]);
 
   // Sort messages and prepare day separators and sender groups.
   const rows = useMemo<Row[]>(() => {
@@ -169,13 +227,17 @@ export function DMWindow({ otherUserId }: { otherUserId: string }) {
     el.style.height = `${Math.min(el.scrollHeight, 128)}px`;
   }, [draft]);
 
-  const handleScroll = () => {
-    const el = scrollRef.current;
-    if (!el) return;
+ const handleScroll = () => {
+  const el = scrollRef.current;
+  if (!el) return;
 
-    stickToBottom.current =
-      el.scrollHeight - el.scrollTop - el.clientHeight < 80;
-  };
+  stickToBottom.current =
+    el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+
+  if (el.scrollTop < 80 && hasMore && !isLoadingOlder && !olderError) {
+    requestOlder();
+  }
+};
 
   const submitDraft = () => {
     const text = draft.trim();
@@ -185,8 +247,11 @@ export function DMWindow({ otherUserId }: { otherUserId: string }) {
     }
 
     stickToBottom.current = true;
-    sendMessage(text);
-    setDraft("");
+
+    // Only clear the input if the message actually went out.
+    if (sendMessage(text)) {
+      setDraft("");
+    }
   };
 
   if (isLoadingHistory && !activeConversationId) {
@@ -225,7 +290,26 @@ export function DMWindow({ otherUserId }: { otherUserId: string }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--surface)] text-[var(--text)]">
+   <div className="relative flex h-full min-h-0 w-full flex-col overflow-hidden bg-[var(--surface)] text-[var(--text)]">
+
+  {/* Floating loading / error pill */}
+  {(isLoadingOlder || olderError) && (
+    <div className="pointer-events-none absolute inset-x-0 top-2 z-10 flex justify-center">
+      {isLoadingOlder ? (
+        <span className="rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs text-[var(--muted)] shadow">
+          Loading older messages…
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={requestOlder}
+          className="pointer-events-auto rounded-full bg-[var(--surface-2)] px-3 py-1 text-xs text-[var(--danger)] shadow"
+        >
+          Could not load older messages · Retry
+        </button>
+      )}
+    </div>
+  )}
       {/* Only this region scrolls. */}
       <div
         ref={scrollRef}

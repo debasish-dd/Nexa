@@ -44,6 +44,7 @@ export const getMessages = async (
     conversationId: string,
     userId: string,
     limit: number = 50,
+    before?: string,
 ) => {
     if (limit < 1 || limit > 100) {
         throw new ApiError(
@@ -64,10 +65,25 @@ export const getMessages = async (
         );
     }
 
-    return getMessagesRepository(
-        conversationId,
-        limit,
-    );
+    try {
+        return await getMessagesRepository(
+            conversationId,
+            limit,
+            before,
+        );
+    } catch (error) {
+        // 22P02 = malformed id: the cursor wasn't a valid message id.
+        if (
+            before &&
+            typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            error.code === "22P02"
+        ) {
+            throw new ApiError(400, "Invalid cursor");
+        }
+        throw error;
+    }
 };
 
 export const editMessage = async (

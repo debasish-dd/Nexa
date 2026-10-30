@@ -24,11 +24,12 @@ export async function deleteDM(conversationId: string): Promise<void> {
 
 export async function getMessageHistory(
   conversationId: string,
-  limit = 50
+  limit = 50,
+  before?: string
 ): Promise<Message[]> {
   const res = await http.get<{ data: Message[] }>(
     `/conversations/${conversationId}/messages`,
-    { params: { limit } }
+    { params: { limit, before } }
   );
   return res.data.data;
 }
@@ -67,6 +68,7 @@ export async function deleteMessage(
   );
   return res.data.data;
 }
+
 
 
 
