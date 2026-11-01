@@ -215,9 +215,12 @@ export const createDM = async (
             error.code === "23505" &&
             error.constraint === "dm_pairs_unique_users"
         ) {
+            // Reuse the connection we already hold. Asking the pool for a
+            // second one here is what froze the pool under load.
             const existingDM = await findDMPair(
                 user1Id,
                 user2Id,
+                client,
             );
 
             if (existingDM) {

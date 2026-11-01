@@ -15,13 +15,14 @@ export interface DMPair {
 export const findDMPair = async (
     userAId: string,
     userBId: string,
+    executor: QueryExecutor = pool,
 ): Promise<DMPair | null> => {
     const [user1Id, user2Id] =
         userAId < userBId
             ? [userAId, userBId]
             : [userBId, userAId];
 
-    const result = await pool.query<DMPair>(
+    const result = await executor.query<DMPair>(
         `
         SELECT
             id,
