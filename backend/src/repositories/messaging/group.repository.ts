@@ -1,7 +1,10 @@
-import type { PoolClient } from "pg";
+import type { Pool, PoolClient } from "pg";
 import { getPool } from "../../db/pool";
+import type { ParticipantRole } from "./participant.repository";
 
 const pool = getPool();
+
+type QueryExecutor = Pool | PoolClient;
 
 export interface Group {
     id: string;
@@ -12,6 +15,38 @@ export interface Group {
     description: string | null;
     groupProfile: string;
 }
+
+export interface GroupMember {
+    userId: string;
+    username: string;
+    displayName: string | null;
+    avatarUrl: string | null;
+    role: ParticipantRole;
+    joinedAt: Date;
+}
+
+// Constants, not user input, so it is safe to splice them into the SQL below.
+const GROUP_COLUMNS = `
+    id,
+    conversation_id AS "conversationId",
+    created_at AS "createdAt",
+    admin_id AS "adminId",
+    name,
+    description,
+    group_profile AS "groupProfile"
+`;
+
+const MEMBER_SELECT = `
+    SELECT
+        cp.user_id AS "userId",
+        u.username,
+        u.display_name AS "displayName",
+        u.avatar_url AS "avatarUrl",
+        cp.role,
+        cp.joined_at AS "joinedAt"
+    FROM conversation_participants cp
+    JOIN users u ON u.id = cp.user_id
+`;
 
 /**
  * Create a group for an existing group conversation.
@@ -36,22 +71,9 @@ export const createGroup = async (
             group_profile
         )
         VALUES ($1, $2, $3, $4, $5)
-        RETURNING
-            id,
-            conversation_id AS "conversationId",
-            created_at AS "createdAt",
-            admin_id AS "adminId",
-            name,
-            description,
-            group_profile AS "groupProfile"
+        RETURNING ${GROUP_COLUMNS}
         `,
-        [
-            conversationId,
-            adminId,
-            name,
-            description,
-            groupProfile,
-        ],
+        [conversationId, adminId, name, description, groupProfile],
     );
 
     const group = result.rows[0];
@@ -64,50 +86,20 @@ export const createGroup = async (
 };
 
 /**
- * Find a group by its ID.
- */
-export const findGroupById = async (
-    groupId: string,
-): Promise<Group | null> => {
-    const result = await pool.query<Group>(
-        `
-        SELECT
-            id,
-            conversation_id AS "conversationId",
-            created_at AS "createdAt",
-            admin_id AS "adminId",
-            name,
-            description,
-            group_profile AS "groupProfile"
-        FROM groups
-        WHERE id = $1
-        LIMIT 1
-        `,
-        [groupId],
-    );
-
-    return result.rows[0] ?? null;
-};
-
-/**
- * Find a group by its conversation ID.
+ * Find a group by its conversation id. With forUpdate = true the row is locked
+ * until the surrounding transaction ends, which serializes changes to one group.
  */
 export const findGroupByConversationId = async (
     conversationId: string,
+    executor: QueryExecutor = pool,
+    forUpdate = false,
 ): Promise<Group | null> => {
-    const result = await pool.query<Group>(
+    const result = await executor.query<Group>(
         `
-        SELECT
-            id,
-            conversation_id AS "conversationId",
-            created_at AS "createdAt",
-            admin_id AS "adminId",
-            name,
-            description,
-            group_profile AS "groupProfile"
+        SELECT ${GROUP_COLUMNS}
         FROM groups
         WHERE conversation_id = $1
-        LIMIT 1
+        ${forUpdate ? "FOR UPDATE" : ""}
         `,
         [conversationId],
     );
@@ -116,77 +108,162 @@ export const findGroupByConversationId = async (
 };
 
 /**
- * Update group information.
+ * Partial update done in SQL, so two people editing different fields at the
+ * same moment can't overwrite each other. undefined means "leave it alone".
  */
-export const updateGroup = async (
-    groupId: string,
-    name: string,
-    description: string | null,
-    groupProfile: string,
+export const updateGroupFields = async (
+    conversationId: string,
+    fields: {
+        name?: string | undefined;
+        description?: string | null | undefined;
+        groupProfile?: string | undefined;
+    },
+    executor: QueryExecutor = pool,
 ): Promise<Group | null> => {
-    const result = await pool.query<Group>(
+    const result = await executor.query<Group>(
         `
         UPDATE groups
         SET
-            name = $2,
-            description = $3,
-            group_profile = $4
-        WHERE id = $1
-        RETURNING
-            id,
-            conversation_id AS "conversationId",
-            created_at AS "createdAt",
-            admin_id AS "adminId",
-            name,
-            description,
-            group_profile AS "groupProfile"
+            name = COALESCE($2, name),
+            description = CASE WHEN $3::boolean THEN $4 ELSE description END,
+            group_profile = COALESCE($5, group_profile)
+        WHERE conversation_id = $1
+        RETURNING ${GROUP_COLUMNS}
         `,
-        [groupId, name, description, groupProfile],
+        [
+            conversationId,
+            fields.name ?? null,
+            fields.description !== undefined,
+            fields.description ?? null,
+            fields.groupProfile ?? null,
+        ],
     );
 
     return result.rows[0] ?? null;
 };
 
-/**
- * Change the group administrator.
- */
-export const updateGroupAdmin = async (
-    groupId: string,
+export const setGroupAdminId = async (
+    conversationId: string,
     adminId: string,
-): Promise<Group | null> => {
-    const result = await pool.query<Group>(
+    executor: QueryExecutor = pool,
+): Promise<boolean> => {
+    const result = await executor.query(
         `
         UPDATE groups
         SET admin_id = $2
-        WHERE id = $1
-        RETURNING
-            id,
-            conversation_id AS "conversationId",
-            created_at AS "createdAt",
-            admin_id AS "adminId",
-            name,
-            description,
-            group_profile AS "groupProfile"
+        WHERE conversation_id = $1
         `,
-        [groupId, adminId],
-    );
-
-    return result.rows[0] ?? null;
-};
-
-/**
- * Delete a group by its ID.
- */
-export const deleteGroup = async (
-    groupId: string,
-): Promise<boolean> => {
-    const result = await pool.query(
-        `
-        DELETE FROM groups
-        WHERE id = $1
-        `,
-        [groupId],
+        [conversationId, adminId],
     );
 
     return result.rowCount === 1;
+};
+
+export const deleteGroupByConversationId = async (
+    conversationId: string,
+    executor: QueryExecutor = pool,
+): Promise<boolean> => {
+    const result = await executor.query(
+        `
+        DELETE FROM groups
+        WHERE conversation_id = $1
+        `,
+        [conversationId],
+    );
+
+    return result.rowCount === 1;
+};
+
+export const getMemberRole = async (
+    conversationId: string,
+    userId: string,
+    executor: QueryExecutor = pool,
+): Promise<ParticipantRole | null> => {
+    const result = await executor.query<{ role: ParticipantRole }>(
+        `
+        SELECT role
+        FROM conversation_participants
+        WHERE conversation_id = $1
+          AND user_id = $2
+        LIMIT 1
+        `,
+        [conversationId, userId],
+    );
+
+    return result.rows[0]?.role ?? null;
+};
+
+export const setMemberRole = async (
+    conversationId: string,
+    userId: string,
+    role: ParticipantRole,
+    executor: QueryExecutor = pool,
+): Promise<boolean> => {
+    const result = await executor.query(
+        `
+        UPDATE conversation_participants
+        SET role = $3
+        WHERE conversation_id = $1
+          AND user_id = $2
+        `,
+        [conversationId, userId, role],
+    );
+
+    return result.rowCount === 1;
+};
+
+export const removeMember = async (
+    conversationId: string,
+    userId: string,
+    executor: QueryExecutor = pool,
+): Promise<boolean> => {
+    const result = await executor.query(
+        `
+        DELETE FROM conversation_participants
+        WHERE conversation_id = $1
+          AND user_id = $2
+        `,
+        [conversationId, userId],
+    );
+
+    return result.rowCount === 1;
+};
+
+/**
+ * Members with names and avatars, admin first, then mods, then members.
+ */
+export const listMembers = async (
+    conversationId: string,
+    executor: QueryExecutor = pool,
+): Promise<GroupMember[]> => {
+    const result = await executor.query<GroupMember>(
+        `
+        ${MEMBER_SELECT}
+        WHERE cp.conversation_id = $1
+        ORDER BY
+            CASE cp.role WHEN 'admin' THEN 0 WHEN 'mod' THEN 1 ELSE 2 END,
+            cp.joined_at ASC
+        `,
+        [conversationId],
+    );
+
+    return result.rows;
+};
+
+export const findMember = async (
+    conversationId: string,
+    userId: string,
+    executor: QueryExecutor = pool,
+): Promise<GroupMember | null> => {
+    const result = await executor.query<GroupMember>(
+        `
+        ${MEMBER_SELECT}
+        WHERE cp.conversation_id = $1
+          AND cp.user_id = $2
+        LIMIT 1
+        `,
+        [conversationId, userId],
+    );
+
+    return result.rows[0] ?? null;
 };
