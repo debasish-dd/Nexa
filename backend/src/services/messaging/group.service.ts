@@ -23,6 +23,10 @@ import {
     addParticipant,
     type ParticipantRole,
 } from "../../repositories/messaging/participant.repository";
+import {
+    NO_AVATAR_PLACEHOLDER,
+    resolveGroupAvatar,
+} from "../../utils/group-avatar";
 
 const MAX_NAME_LENGTH = 60;
 const MAX_DESCRIPTION_LENGTH = 500;
@@ -46,8 +50,9 @@ export interface GroupResult {
     adminId: string;
     name: string;
     description: string | null;
-    groupProfile: string;
+    groupProfile: string | null;
     createdAt: Date;
+    
 }
 
 export interface GroupDetails extends GroupResult {
@@ -72,7 +77,7 @@ const toGroupResult = (group: Group): GroupResult => ({
     adminId: group.adminId,
     name: group.name,
     description: group.description,
-    groupProfile: group.groupProfile,
+    groupProfile: resolveGroupAvatar(group.groupProfile),
     createdAt: group.createdAt,
 });
 
@@ -197,9 +202,9 @@ export const createGC = async (
 ): Promise<GroupResult> => {
     const name = cleanName(input.name);
     const description = cleanDescription(input.description);
-    const groupProfile =
+        const groupProfile =
         input.groupProfile === undefined
-            ? DEFAULT_GROUP_PROFILE
+            ? NO_AVATAR_PLACEHOLDER
             : cleanProfileUrl(input.groupProfile);
 
     const client = await getPool().connect();

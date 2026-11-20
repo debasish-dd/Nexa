@@ -4,6 +4,12 @@ import asyncHandler from "../../utils/async-handler";
 import * as groupService from "../../services/messaging/group.service";
 import { ApiError } from "../../utils/api-error";
 import { ApiResponse } from "../../utils/api-response";
+import {
+    closeConversationRoom,
+    emitToConversation,
+    joinConversationRoom,
+    leaveConversationRoom,
+} from "../../socket/conversation-events";
 
 // The caller always comes from the login, never from the request body.
 const getCallerId = (req: Request): string => {
@@ -48,6 +54,9 @@ export const createGroup = asyncHandler(
             groupProfile,
         });
 
+        // The creator's open connections join the new room right away.
+        joinConversationRoom(callerId, group.conversationId);
+
         res.status(201).json(
             new ApiResponse(201, "Group created successfully", group),
         );
@@ -81,6 +90,8 @@ export const updateGroup = asyncHandler(
             groupProfile,
         });
 
+        emitToConversation(conversationId, "group:updated", group);
+
         res.status(200).json(
             new ApiResponse(200, "Group updated successfully", group),
         );
@@ -94,6 +105,10 @@ export const deleteGroup = asyncHandler(
         const conversationId = getParam(req, "conversationId");
 
         await groupService.deleteGroup(conversationId, callerId);
+
+        // Tell everyone, then empty the room.
+        emitToConversation(conversationId, "group:deleted", { conversationId });
+        closeConversationRoom(conversationId);
 
         res.status(200).json(
             new ApiResponse(200, "Group deleted successfully", null),
@@ -114,6 +129,13 @@ export const addMember = asyncHandler(
             targetUserId,
         );
 
+        // Join first, so the new member receives the event too.
+        joinConversationRoom(targetUserId, conversationId);
+        emitToConversation(conversationId, "group:member-added", {
+            conversationId,
+            member,
+        });
+
         res.status(201).json(
             new ApiResponse(201, "Member added successfully", member),
         );
@@ -128,6 +150,16 @@ export const removeMember = asyncHandler(
         const targetUserId = getParam(req, "userId");
 
         await groupService.removeMember(conversationId, callerId, targetUserId);
+
+        // Announce first, THEN remove the person from the room,
+        // so the removed person hears about it too.
+        emitToConversation(conversationId, "group:member-removed", {
+            conversationId,
+            userId: targetUserId,
+            removedBy: callerId,
+            reason: callerId === targetUserId ? "left" : "removed",
+        });
+        leaveConversationRoom(targetUserId, conversationId);
 
         res.status(200).json(
             new ApiResponse(200, "Member removed successfully", null),
@@ -150,6 +182,11 @@ export const changeMemberRole = asyncHandler(
             role,
         );
 
+        emitToConversation(conversationId, "group:role-changed", {
+            conversationId,
+            member,
+        });
+
         res.status(200).json(
             new ApiResponse(200, "Member role updated", member),
         );
@@ -168,6 +205,12 @@ export const transferAdmin = asyncHandler(
             callerId,
             targetUserId,
         );
+
+        emitToConversation(conversationId, "group:admin-changed", {
+            conversationId,
+            adminId: group.adminId,
+            previousAdminId: callerId,
+        });
 
         res.status(200).json(
             new ApiResponse(200, "Admin transferred successfully", group),

@@ -26,6 +26,23 @@ export interface InboxRow {
     unreadCount: number;
 }
 
+export interface GroupInboxRow {
+    conversationId: string;
+    groupName: string;
+    groupProfile: string;
+    myRole: "member" | "mod" | "admin";
+    memberCount: number;
+    groupCreatedAt: Date;
+    lastMessageId: string | null;
+    lastMessageSenderId: string | null;
+    lastMessageSenderName: string | null;
+    lastMessageContent: string | null; // null when deleted, or when there is no message
+    lastMessageCreatedAt: Date | null;
+    lastMessageDeletedAt: Date | null;
+    unreadCount: number;
+}
+
+
 
 
 export const createConversation = async (
@@ -162,6 +179,72 @@ export const getInboxForUser = async (
         ) lm ON TRUE
         WHERE me.user_id = $1
         ORDER BY lm.created_at DESC
+        LIMIT $2
+        `,
+        [userId, limit],
+    );
+
+    return result.rows;
+};
+
+export const getGroupInboxForUser = async (
+    userId: string,
+    limit: number,
+): Promise<GroupInboxRow[]> => {
+    const result = await pool.query<GroupInboxRow>(
+        `
+        SELECT
+            c.id AS "conversationId",
+            g.name AS "groupName",
+            g.group_profile AS "groupProfile",
+            me.role AS "myRole",
+            (
+                SELECT COUNT(*)::int
+                FROM conversation_participants cp
+                WHERE cp.conversation_id = c.id
+            ) AS "memberCount",
+            g.created_at AS "groupCreatedAt",
+            lm.id AS "lastMessageId",
+            lm.sender_id AS "lastMessageSenderId",
+            lu.username AS "lastMessageSenderName",
+            CASE WHEN lm.deleted_at IS NULL THEN lm.content END
+                AS "lastMessageContent",
+            lm.created_at AS "lastMessageCreatedAt",
+            lm.deleted_at AS "lastMessageDeletedAt",
+            (
+                SELECT COUNT(*)::int
+                FROM (
+                    SELECT 1
+                    FROM messages um
+                    WHERE um.conversation_id = c.id
+                      AND um.sender_id <> me.user_id
+                      AND um.deleted_at IS NULL
+                      AND (
+                          rm.id IS NULL
+                          OR (um.created_at, um.id) > (rm.created_at, rm.id)
+                      )
+                    LIMIT 100
+                ) unread
+            ) AS "unreadCount"
+        FROM conversation_participants me
+        JOIN conversations c
+            ON c.id = me.conversation_id
+           AND c.type = 'gc'
+        JOIN groups g
+            ON g.conversation_id = c.id
+        LEFT JOIN messages rm
+            ON rm.id = me.last_read_message_id
+        LEFT JOIN LATERAL (
+            SELECT m.id, m.sender_id, m.content, m.created_at, m.deleted_at
+            FROM messages m
+            WHERE m.conversation_id = c.id
+            ORDER BY m.created_at DESC, m.id DESC
+            LIMIT 1
+        ) lm ON TRUE
+        LEFT JOIN users lu
+            ON lu.id = lm.sender_id
+        WHERE me.user_id = $1
+        ORDER BY COALESCE(lm.created_at, g.created_at) DESC
         LIMIT $2
         `,
         [userId, limit],

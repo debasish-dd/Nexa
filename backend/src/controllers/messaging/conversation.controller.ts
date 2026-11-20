@@ -24,7 +24,9 @@ export const getInbox = asyncHandler(async (req: Request, res: Response) => {
         throw new ApiError(400, "limit must be a number");
     }
 
-    const inbox = await getInboxService(userId, limit);
+    const includeGroups = req.query.include === "groups";
+
+    const inbox = await getInboxService(userId, limit, { includeGroups });
 
     return res
         .status(200)

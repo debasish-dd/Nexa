@@ -116,6 +116,14 @@ export const editMessage = async (
             "You can only edit your own messages",
         );
     }
+        const participant = await isParticipant(message.conversationId, userId);
+
+    if (!participant) {
+        throw new ApiError(
+            403,
+            "You are not a participant in this conversation",
+        );
+    }
 
     const updatedMessage = await editMessageRepository(
         messageId,
@@ -153,6 +161,14 @@ export const deleteMessage = async (
         throw new ApiError(
             403,
             "You can only delete your own messages",
+        );
+    }
+        const participant = await isParticipant(message.conversationId, userId);
+
+    if (!participant) {
+        throw new ApiError(
+            403,
+            "You are not a participant in this conversation",
         );
     }
 
