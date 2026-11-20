@@ -3,6 +3,7 @@ import { getSocket } from "@/libs/socket/client";
 import { ApiRequestError } from "@/libs/http/client";
 import {
   createOrGetDM,
+  getGroupInbox,
   getInbox,
   getMessageHistory,
   markConversationRead,
@@ -50,6 +51,11 @@ type ChatState = {
   isLoadingOlder: boolean;
   olderError: string | null;
 
+  groupInbox: InboxItem[];
+  isLoadingGroupInbox: boolean;
+  groupInboxError: string | null;
+  groupInboxLoaded: boolean;
+
   markActiveRead: () => void;
   loadOlderMessages: () => Promise<void>;
   clearFailedDraft: () => void;
@@ -60,12 +66,16 @@ type ChatState = {
   refreshGroup: (conversationId: string) => Promise<void>;
   sendMessage: (content: string) => boolean;
   loadInbox: (options?: { silent?: boolean }) => Promise<void>;
+  loadGroupInbox: (options?: { silent?: boolean }) => Promise<void>;
   // Closes whatever chat is open, DM or group.
   closeDM: () => void;
 };
 
+
 let openRequestId = 0;
 let inboxRequestId = 0;
+let groupInboxRequestId = 0;
+
 const HISTORY_PAGE_SIZE = 50;
 
 // conversationId -> id of the newest message we already told the server about.
@@ -105,6 +115,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
   hasMore: {},
   isLoadingOlder: false,
   olderError: null,
+  groupInbox: [],
+  isLoadingGroupInbox: false,
+  groupInboxError: null,
+  groupInboxLoaded: false,
 
   openDM: async (otherUserId) => {
     const requestId = ++openRequestId;
@@ -350,7 +364,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!silent) set({ isLoadingInbox: true, inboxError: null });
 
     try {
-      const inbox = await getInbox(30, { includeGroups: true });
+      const inbox = await getInbox(30);
       if (requestId !== inboxRequestId) return;
 
       const { activeConversationId } = get();
@@ -372,14 +386,58 @@ export const useChatStore = create<ChatState>((set, get) => ({
         ...(silent
           ? {}
           : {
-              inboxError:
-                error instanceof Error
-                  ? error.message
-                  : "Failed to load conversations",
-            }),
+            inboxError:
+              error instanceof Error
+                ? error.message
+                : "Failed to load conversations",
+          }),
       });
     }
   },
+
+ loadGroupInbox: async (options) => {
+  const silent = options?.silent ?? false;
+  const requestId = ++groupInboxRequestId;
+
+  if (!silent) {
+    set({
+      isLoadingGroupInbox: true,
+      groupInboxError: null,
+    });
+  }
+
+  try {
+    const inbox = await getGroupInbox(10);
+
+    if (requestId !== groupInboxRequestId) return;
+
+    const { activeConversationId } = get();
+
+    set({
+      groupInbox: inbox.map((item) =>
+        item.conversationId === activeConversationId && isTabVisible()
+          ? { ...item, unreadCount: 0 }
+          : item
+      ),
+      isLoadingGroupInbox: false,
+      groupInboxLoaded: true,
+    });
+  } catch (error) {
+    if (requestId !== groupInboxRequestId) return;
+
+    set({
+      isLoadingGroupInbox: false,
+      ...(silent
+        ? {}
+        : {
+            groupInboxError:
+              error instanceof Error
+                ? error.message
+                : "Failed to load group conversations",
+          }),
+    });
+  }
+},
 
   loadOlderMessages: async () => {
     const state = get();
@@ -523,17 +581,17 @@ socket.on("message:new", (message: Message) => {
     const updated: InboxItem =
       inboxItem.type === "dm"
         ? {
-            ...inboxItem,
-            unreadCount,
-            lastMessage,
-            lastActivityAt: message.createdAt,
-          }
+          ...inboxItem,
+          unreadCount,
+          lastMessage,
+          lastActivityAt: message.createdAt,
+        }
         : {
-            ...inboxItem,
-            unreadCount,
-            lastMessage: { ...lastMessage, senderName },
-            lastActivityAt: message.createdAt,
-          };
+          ...inboxItem,
+          unreadCount,
+          lastMessage: { ...lastMessage, senderName },
+          lastActivityAt: message.createdAt,
+        };
 
     // Move it to the top.
     inbox = [updated, ...state.inbox.filter((item) => item !== inboxItem)];
@@ -587,25 +645,25 @@ socket.on("group:updated", (group: GroupInfo) => {
     return {
       groups: current
         ? {
-            ...state.groups,
-            [group.conversationId]: {
-              ...current,
-              name: group.name,
-              description: group.description,
-              groupProfile: group.groupProfile,
-            },
-          }
+          ...state.groups,
+          [group.conversationId]: {
+            ...current,
+            name: group.name,
+            description: group.description,
+            groupProfile: group.groupProfile,
+          },
+        }
         : state.groups,
       inbox: patchInboxItem(state.inbox, group.conversationId, (item) =>
         item.type === "gc"
           ? {
-              ...item,
-              group: {
-                ...item.group,
-                name: group.name,
-                avatarUrl: group.groupProfile,
-              },
-            }
+            ...item,
+            group: {
+              ...item.group,
+              name: group.name,
+              avatarUrl: group.groupProfile,
+            },
+          }
           : item
       ),
     };
@@ -634,22 +692,22 @@ socket.on(
         groups:
           group && !alreadyListed
             ? {
-                ...s.groups,
-                [conversationId]: {
-                  ...group,
-                  members: [...group.members, member],
-                },
-              }
+              ...s.groups,
+              [conversationId]: {
+                ...group,
+                members: [...group.members, member],
+              },
+            }
             : s.groups,
         inbox: patchInboxItem(s.inbox, conversationId, (item) =>
           item.type === "gc"
             ? {
-                ...item,
-                group: {
-                  ...item.group,
-                  memberCount: item.group.memberCount + 1,
-                },
-              }
+              ...item,
+              group: {
+                ...item.group,
+                memberCount: item.group.memberCount + 1,
+              },
+            }
             : item
         ),
       };
@@ -679,22 +737,22 @@ socket.on(
       return {
         groups: group
           ? {
-              ...s.groups,
-              [conversationId]: {
-                ...group,
-                members: group.members.filter((m) => m.userId !== userId),
-              },
-            }
+            ...s.groups,
+            [conversationId]: {
+              ...group,
+              members: group.members.filter((m) => m.userId !== userId),
+            },
+          }
           : s.groups,
         inbox: patchInboxItem(s.inbox, conversationId, (item) =>
           item.type === "gc"
             ? {
-                ...item,
-                group: {
-                  ...item.group,
-                  memberCount: Math.max(0, item.group.memberCount - 1),
-                },
-              }
+              ...item,
+              group: {
+                ...item.group,
+                memberCount: Math.max(0, item.group.memberCount - 1),
+              },
+            }
             : item
         ),
       };
@@ -714,22 +772,22 @@ socket.on(
       return {
         groups: group
           ? {
-              ...s.groups,
-              [conversationId]: {
-                ...group,
-                myRole: isMe ? member.role : group.myRole,
-                members: group.members.map((m) =>
-                  m.userId === member.userId ? member : m
-                ),
-              },
-            }
+            ...s.groups,
+            [conversationId]: {
+              ...group,
+              myRole: isMe ? member.role : group.myRole,
+              members: group.members.map((m) =>
+                m.userId === member.userId ? member : m
+              ),
+            },
+          }
           : s.groups,
         inbox: isMe
           ? patchInboxItem(s.inbox, conversationId, (item) =>
-              item.type === "gc"
-                ? { ...item, group: { ...item.group, myRole: member.role } }
-                : item
-            )
+            item.type === "gc"
+              ? { ...item, group: { ...item.group, myRole: member.role } }
+              : item
+          )
           : s.inbox,
       };
     });
@@ -757,28 +815,28 @@ socket.on(
       return {
         groups: group
           ? {
-              ...s.groups,
-              [conversationId]: {
-                ...group,
-                adminId,
-                myRole: myRole ?? group.myRole,
-                members: group.members.map((m) =>
-                  m.userId === adminId
-                    ? { ...m, role: "admin" as const }
-                    : m.userId === previousAdminId
-                      ? { ...m, role: "mod" as const }
-                      : m
-                ),
-              },
-            }
+            ...s.groups,
+            [conversationId]: {
+              ...group,
+              adminId,
+              myRole: myRole ?? group.myRole,
+              members: group.members.map((m) =>
+                m.userId === adminId
+                  ? { ...m, role: "admin" as const }
+                  : m.userId === previousAdminId
+                    ? { ...m, role: "mod" as const }
+                    : m
+              ),
+            },
+          }
           : s.groups,
         inbox:
           myRole !== undefined
             ? patchInboxItem(s.inbox, conversationId, (item) =>
-                item.type === "gc"
-                  ? { ...item, group: { ...item.group, myRole } }
-                  : item
-              )
+              item.type === "gc"
+                ? { ...item, group: { ...item.group, myRole } }
+                : item
+            )
             : s.inbox,
       };
     });

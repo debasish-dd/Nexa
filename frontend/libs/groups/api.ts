@@ -1,6 +1,8 @@
 import { http } from "@/libs/http/client";
 import type {
+  DMInboxItem,
   GroupDetails,
+  GroupInboxItem,
   GroupInfo,
   GroupMember,
 } from "@/types/chat";
@@ -21,6 +23,30 @@ export async function getGroup(conversationId: string): Promise<GroupDetails> {
   return res.data.data;
 }
 
+
+export async function getGroupInbox(
+  limit = 10,
+): Promise<GroupInboxItem[]> {
+  const res = await http.get<{ data: GroupInboxItem[] }>(
+    "/groups/conversations",
+    {
+      params: { limit },
+    },
+  );
+
+  return res.data.data;
+}
+
+
+export async function getInbox(
+  limit = 30,
+): Promise<DMInboxItem[]> {
+  const res = await http.get<{ data: DMInboxItem[] }>("/conversations", {
+    params: { limit },
+  });
+
+  return res.data.data;
+}
 export async function updateGroup(
   conversationId: string,
   input: { name?: string | undefined; description?: string | null | undefined }

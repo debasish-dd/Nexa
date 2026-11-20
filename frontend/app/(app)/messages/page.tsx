@@ -10,11 +10,14 @@ export default function MessagesPage() {
   const isLoadingInbox = useChatStore((s) => s.isLoadingInbox);
   const inboxError = useChatStore((s) => s.inboxError);
   const loadInbox = useChatStore((s) => s.loadInbox);
+  const loadGroupInbox = useChatStore((s) => s.loadGroupInbox);
   const currentUserId = useAuthStore((s) => s.user?.id);
 
   useEffect(() => {
     loadInbox();
-  }, [loadInbox]);
+    loadGroupInbox();
+
+  }, [loadInbox, loadGroupInbox]);
 
   return (
     <main className="mx-auto w-full max-w-2xl">
