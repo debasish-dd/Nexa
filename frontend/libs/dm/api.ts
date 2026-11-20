@@ -78,9 +78,13 @@ export async function markConversationRead(
 
 
 // ⚠️ Same mount-path assumption: the conversation router lives at /conversations.
-export async function getInbox(limit = 30): Promise<InboxItem[]> {
+export async function getInbox(
+  limit = 30,
+  options: { includeGroups?: boolean } = {}
+): Promise<InboxItem[]> {
   const res = await http.get<{ data: InboxItem[] }>("/conversations", {
-    params: { limit },
+    // axios leaves out params that are undefined
+    params: { limit, include: options.includeGroups ? "groups" : undefined },
   });
   return res.data.data;
 }
