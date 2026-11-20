@@ -5,7 +5,8 @@ import {
     changeMemberRole,
     createGroup,
     deleteGroup,
-    getGroup,
+    getGCByConversationId,
+    getGroupInbox,
     removeMember,
     transferAdmin,
     updateGroup,
@@ -15,7 +16,13 @@ const router = Router();
 router.use(isUserLoggedIn);
 
 router.post("/", createGroup);
-router.get("/:conversationId", getGroup);
+
+// Group inbox
+router.get("/conversations", getGroupInbox);
+
+// Individual group details
+router.get("/:conversationId", getGCByConversationId);
+
 router.patch("/:conversationId", updateGroup);
 router.delete("/:conversationId", deleteGroup);
 

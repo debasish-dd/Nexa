@@ -10,6 +10,7 @@ import {
     deleteGroupByConversationId,
     findGroupByConversationId,
     findMember,
+    getGroupInboxForUser,
     getMemberRole,
     listMembers,
     removeMember as removeMemberRepository,
@@ -17,6 +18,7 @@ import {
     setMemberRole,
     updateGroupFields,
     type Group,
+    type GroupInboxRow,
     type GroupMember,
 } from "../../repositories/messaging/group.repository";
 import {
@@ -52,7 +54,31 @@ export interface GroupResult {
     description: string | null;
     groupProfile: string | null;
     createdAt: Date;
-    
+
+}
+
+export interface GroupInboxResult {
+    type: "gc";
+    conversationId: string;
+    unreadCount: number;
+
+    group: {
+        name: string;
+        avatarUrl: string | null;
+        memberCount: number;
+        myRole: GroupInboxRow["myRole"];
+    };
+
+    lastMessage: {
+        id: string;
+        senderId: string;
+        content: string | null;
+        createdAt: Date;
+        isDeleted: boolean;
+        senderName: string | null;
+    } | null;
+
+    lastActivityAt: Date;
 }
 
 export interface GroupDetails extends GroupResult {
@@ -174,6 +200,50 @@ const withGroupLock = async <T>(
     }
 };
 
+const toGroupInboxResult = (
+    row: GroupInboxRow,
+): GroupInboxResult => {
+
+    let lastMessage: GroupInboxResult["lastMessage"] = null;
+
+    if (row.lastMessageId !== null) {
+        if (
+            row.lastMessageSenderId === null ||
+            row.lastMessageCreatedAt === null
+        ) {
+            throw new Error("Invalid group inbox message data");
+        }
+
+        lastMessage = {
+            id: row.lastMessageId,
+            senderId: row.lastMessageSenderId,
+            content: row.lastMessageContent,
+            createdAt: row.lastMessageCreatedAt,
+            isDeleted: row.lastMessageIsDeleted ?? false,
+            senderName: row.lastMessageSenderName,
+        };
+    }
+
+    return {
+        type: "gc",
+        conversationId: row.conversationId,
+        unreadCount: row.unreadCount,
+
+        group: {
+            name: row.groupName,
+            avatarUrl: row.groupProfile
+                ? resolveGroupAvatar(row.groupProfile)
+                : null,
+            memberCount: row.memberCount,
+            myRole: row.myRole,
+        },
+
+        lastMessage,
+
+        lastActivityAt: row.lastActivityAt,
+    };
+};
+
 // Non-members get the same answer as "group doesn't exist".
 const requireRole = async (
     client: PoolClient,
@@ -202,7 +272,7 @@ export const createGC = async (
 ): Promise<GroupResult> => {
     const name = cleanName(input.name);
     const description = cleanDescription(input.description);
-        const groupProfile =
+    const groupProfile =
         input.groupProfile === undefined
             ? NO_AVATAR_PLACEHOLDER
             : cleanProfileUrl(input.groupProfile);
@@ -236,7 +306,7 @@ export const createGC = async (
     }
 };
 
-export const getGC = async (
+export const getGCByConversationId = async (
     conversationId: string,
     callerId: string,
 ): Promise<GroupDetails> => {
@@ -253,6 +323,20 @@ export const getGC = async (
         const members = await listMembers(conversationId);
 
         return { ...toGroupResult(group), myRole, members };
+    } catch (error) {
+        throw mapDbError(error);
+    }
+};
+
+export const getGroupInbox = async (
+    userId: string,
+    limit = 10,
+): Promise<GroupInboxResult[]> => {
+    try {
+        const rows = await getGroupInboxForUser(userId, limit);
+
+        return rows.map(toGroupInboxResult);
+
     } catch (error) {
         throw mapDbError(error);
     }

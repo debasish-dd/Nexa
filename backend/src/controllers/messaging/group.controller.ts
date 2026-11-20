@@ -64,15 +64,56 @@ export const createGroup = asyncHandler(
 );
 
 /** GET /groups/:conversationId */
-export const getGroup = asyncHandler(
+export const getGCByConversationId = asyncHandler(
     async (req: Request, res: Response) => {
         const callerId = getCallerId(req);
         const conversationId = getParam(req, "conversationId");
 
-        const group = await groupService.getGC(conversationId, callerId);
+        const group = await groupService.getGCByConversationId(conversationId, callerId);
 
         res.status(200).json(
             new ApiResponse(200, "Group fetched successfully", group),
+        );
+    },
+);
+
+export const getGroupInbox = asyncHandler(
+    async (req: Request, res: Response) => {
+        const callerId = getCallerId(req);
+
+        // Default limit = 10
+        const rawLimit = req.query.limit;
+        let limit = 10;
+
+        if (rawLimit !== undefined) {
+            if (typeof rawLimit !== "string") {
+                throw new ApiError(400, "Invalid limit");
+            }
+
+            const parsedLimit = Number(rawLimit);
+
+            if (
+                !Number.isInteger(parsedLimit) ||
+                parsedLimit < 1 ||
+                parsedLimit > 50
+            ) {
+                throw new ApiError(
+                    400,
+                    "Limit must be an integer between 1 and 50",
+                );
+            }
+
+            limit = parsedLimit;
+        }
+
+        const groups = await groupService.getGroupInbox(callerId, limit);
+
+        res.status(200).json(
+            new ApiResponse(
+                200,
+                "Group inbox fetched successfully",
+                groups,
+            ),
         );
     },
 );
