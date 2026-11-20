@@ -7,29 +7,44 @@ import {
     messageDeleteSchema,
 } from "../../validations/message.validation";
 import { isParticipant } from "../../repositories/messaging/participant.repository";
+import { conversationRoom } from "../rooms";
+
+// ApiError messages are written for the user, so they pass through as they are.
+// Anything else is unexpected: log it, and show a generic message.
+const reportError = (
+    socket: Socket,
+    error: unknown,
+    fallback: string,
+): void => {
+    if (error instanceof ApiError) {
+        socket.emit("message:error", { message: error.message });
+        return;
+    }
+
+    console.error(fallback, error);
+    socket.emit("message:error", { message: fallback });
+};
 
 export const registerMessageHandlers = (io: Server, socket: Socket) => {
     const userId = socket.data.userId as string;
 
     socket.on("typing:start", (conversationId: string) => {
-        const room = `conversation:${conversationId}`;
+        const room = conversationRoom(conversationId);
         if (!socket.rooms.has(room)) return;
         socket.to(room).emit("typing:start", { conversationId, userId });
     });
 
     socket.on("typing:stop", (conversationId: string) => {
-        const room = `conversation:${conversationId}`;
+        const room = conversationRoom(conversationId);
         if (!socket.rooms.has(room)) return;
         socket.to(room).emit("typing:stop", { conversationId, userId });
     });
+
     socket.on(
         "conversation:join",
         async (
             data: { conversationId: string },
-            ack?: (result: {
-                ok: boolean;
-                message?: string;
-            }) => void,
+            ack?: (result: { ok: boolean; message?: string }) => void,
         ) => {
             try {
                 const { conversationId } = data;
@@ -38,18 +53,12 @@ export const registerMessageHandlers = (io: Server, socket: Socket) => {
                     typeof conversationId !== "string" ||
                     !conversationId.trim()
                 ) {
-                    ack?.({
-                        ok: false,
-                        message: "Invalid conversation ID",
-                    });
+                    ack?.({ ok: false, message: "Invalid conversation ID" });
                     return;
                 }
 
                 // Verify membership before allowing the socket into the room.
-                const member = await isParticipant(
-                    conversationId,
-                    userId,
-                );
+                const member = await isParticipant(conversationId, userId);
 
                 if (!member) {
                     ack?.({
@@ -59,100 +68,104 @@ export const registerMessageHandlers = (io: Server, socket: Socket) => {
                     return;
                 }
 
-                await socket.join(`conversation:${conversationId}`);
+                await socket.join(conversationRoom(conversationId));
 
                 ack?.({ ok: true });
             } catch (error) {
                 console.error("Failed to join conversation:", error);
 
-                ack?.({
-                    ok: false,
-                    message: "Failed to join conversation",
-                });
+                ack?.({ ok: false, message: "Failed to join conversation" });
             }
         },
     );
 
-    socket.on("message:send", async (data: { conversationId: string; content: string }) => {
-        try {
-            const parsed = messageSendSchema.safeParse(data);
-            if (!parsed.success) {
-                socket.emit("message:error", { message: "Invalid message payload" });
-                return;
+    socket.on(
+        "message:send",
+        async (data: { conversationId: string; content: string }) => {
+            try {
+                const parsed = messageSendSchema.safeParse(data);
+                if (!parsed.success) {
+                    socket.emit("message:error", {
+                        message: "Invalid message payload",
+                    });
+                    return;
+                }
+                const { conversationId, content } = parsed.data;
+
+                // The service checks membership in the database: the real authority.
+                const savedMessage = await messageService.sendMessage(
+                    conversationId,
+                    userId,
+                    content,
+                );
+
+                // The database just confirmed this user belongs here, so make sure
+                // this connection is in the room, in case it hadn't been joined yet.
+                const room = conversationRoom(conversationId);
+                await socket.join(room);
+
+                io.to(room).emit("message:new", savedMessage);
+            } catch (error) {
+                reportError(socket, error, "Failed to send message");
             }
-            const { conversationId, content } = parsed.data;
+        },
+    );
 
-            const room = `conversation:${conversationId}`;
-            if (!socket.rooms.has(room)) {
-                socket.emit("message:error", { message: "You are not a member of this conversation" });
-                return;
+    socket.on(
+        "message:edit",
+        async (data: { messageId: string; content: string }) => {
+            try {
+                const parsed = messageEditSchema.safeParse(data);
+                if (!parsed.success) {
+                    socket.emit("message:error", {
+                        message: "Invalid message payload",
+                    });
+                    return;
+                }
+                const { messageId, content } = parsed.data;
+
+                // The service checks that you wrote it AND are still in the conversation.
+                const updatedMessage = await messageService.editMessage(
+                    messageId,
+                    userId,
+                    content,
+                );
+
+                const room = conversationRoom(updatedMessage.conversationId);
+                await socket.join(room);
+
+                io.to(room).emit("message:edited", updatedMessage);
+            } catch (error) {
+                reportError(socket, error, "Failed to edit message");
             }
-
-            const savedMessage = await messageService.sendMessage(conversationId, userId, content);
-            io.to(room).emit("message:new", savedMessage);
-        } catch (error) {
-            console.error("Failed to send message:", error);
-            socket.emit("message:error", { message: "Failed to send message" });
-        }
-    });
-
-    socket.on("message:edit", async (data: { messageId: string; content: string }) => {
-        try {
-            const parsed = messageEditSchema.safeParse(data);
-            if (!parsed.success) {
-                socket.emit("message:error", { message: "Invalid message payload" });
-                return;
-            }
-            const { messageId, content } = parsed.data;
-
-            // Ownership check happens inside the service (throws ApiError 403 if not the sender)
-            const updatedMessage = await messageService.editMessage(messageId, userId, content);
-
-            const room = `conversation:${updatedMessage.conversationId}`;
-            if (!socket.rooms.has(room)) {
-                socket.emit("message:error", { message: "You are not a member of this conversation" });
-                return;
-            }
-
-            io.to(room).emit("message:edited", updatedMessage);
-        } catch (error) {
-            if (error instanceof ApiError) {
-                socket.emit("message:error", { message: error.message });
-                return;
-            }
-            console.error("Failed to edit message:", error);
-            socket.emit("message:error", { message: "Failed to edit message" });
-        }
-    });
+        },
+    );
 
     socket.on("message:delete", async (data: { messageId: string }) => {
         try {
             const parsed = messageDeleteSchema.safeParse(data);
             if (!parsed.success) {
-                socket.emit("message:error", { message: "Invalid message payload" });
+                socket.emit("message:error", {
+                    message: "Invalid message payload",
+                });
                 return;
             }
             const { messageId } = parsed.data;
 
-            const deletedMessage = await messageService.deleteMessage(messageId, userId);
+            const deletedMessage = await messageService.deleteMessage(
+                messageId,
+                userId,
+            );
 
-            const room = `conversation:${deletedMessage.conversationId}`;
-            if (!socket.rooms.has(room)) {
-                socket.emit("message:error", { message: "You are not a member of this conversation" });
-                return;
-            }
+            const room = conversationRoom(deletedMessage.conversationId);
+            await socket.join(room);
 
             io.to(room).emit("message:deleted", {
                 id: deletedMessage.id,
                 conversationId: deletedMessage.conversationId,
             });
         } catch (error) {
-            if (error instanceof ApiError) {
-                socket.emit("message:error", { message: error.message });
-                return;
-            }
-            console.error("Failed to delete message:", error);
-            socket.emit("message:error", { message: "Failed to delete message" });
+            reportError(socket, error, "Failed to delete message");
         }
     });
 };
