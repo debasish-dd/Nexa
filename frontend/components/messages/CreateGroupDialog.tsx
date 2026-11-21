@@ -51,13 +51,14 @@ export function CreateGroupDialog({
       setName("");
       setDescription("");
       onClose();
-      router.push(`/messages/g/${group.conversationId}`);
+      router.push(`/communities/${group.conversationId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not create the group");
     } finally {
       setIsCreating(false);
     }
   };
+  
 
   return (
     <dialog

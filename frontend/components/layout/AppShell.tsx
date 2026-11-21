@@ -11,7 +11,13 @@ export function AppShell({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(getInitialTheme);
   const pathname = usePathname();
 
-  const isConversationPage = /^\/messages\/[^/]+\/?$/.test(pathname);
+  // Matches nested routes:
+  // /messages/g/[conversationId]
+  // /messages/[other conversation route]
+  // But does not match the inbox page /messages.
+  const isConversationPage =
+    pathname.startsWith("/messages/") ||
+    /^\/communities\/[^/]+\/?$/.test(pathname);
 
   const toggleTheme = () => {
     const next: Theme = theme === "dark" ? "light" : "dark";
@@ -23,18 +29,14 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div
       data-theme={theme}
       className={`app-shell bg-(--bg) text-(--text) ${
-        isConversationPage
-          ? "h-dvh overflow-hidden"
-          : "min-h-screen"
+        isConversationPage ? "h-dvh overflow-hidden" : "min-h-screen"
       }`}
     >
       <Sidebar />
 
       <div
         className={`md:pl-18 lg:pl-60 ${
-          isConversationPage
-            ? "flex h-full min-h-0 flex-col"
-            : ""
+          isConversationPage ? "flex h-full min-h-0 flex-col" : ""
         }`}
       >
         <div className={isConversationPage ? "shrink-0" : ""}>
@@ -44,7 +46,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <main
           className={
             isConversationPage
-              ? "min-h-0 flex-1 overflow-hidden"
+              ? "flex min-h-0 flex-1 flex-col overflow-hidden"
               : "px-4 pb-24 pt-4 md:px-6 md:pb-6 md:pt-6"
           }
         >
@@ -52,7 +54,8 @@ export function AppShell({ children }: { children: ReactNode }) {
         </main>
       </div>
 
-      <MobileNav />
+      {/* The chat composer replaces the bottom navigation on mobile. */}
+      {!isConversationPage && <MobileNav />}
     </div>
   );
 }

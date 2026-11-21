@@ -449,7 +449,7 @@ export function ChatWindow({
           aria-label="Message"
           autoComplete="off"
           disabled={!activeConversationId || isLoadingHistory}
-          className="max-h-32 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-[15px] leading-5 text-[var(--text)] outline-none transition-colors placeholder:text-[var(--muted)] focus:border-[var(--accent-text)] disabled:cursor-not-allowed disabled:opacity-50"
+          className="max-h-32 min-h-12 min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border border-[var(--border)] bg-[var(--surface-2)] px-4 py-3 text-base leading-5 text-[var(--text)] outline-none transition-colors placeholder:text-[var(--muted)] focus:border-[var(--accent-text)] disabled:cursor-not-allowed disabled:opacity-50 sm:text-[15px]"
         />
 
         <button
