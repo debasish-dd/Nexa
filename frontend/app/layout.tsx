@@ -7,6 +7,7 @@ import "./globals.css";
 import { useRouter } from "next/dist/client/components/navigation";
 import { useAuthStore } from "@/store/authStore";
 import { useEffect } from "react";
+import { QueryProvider } from "@/providers/QueryProvider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,19 +24,14 @@ const geistMono = Geist_Mono({
 //   description: "Connect with your campus community.",
 // };
 
-export default function RootLayout({
-  children,
-}: LayoutProps<"/">) {
-
+export default function RootLayout({ children }: LayoutProps<"/">) {
   const router = useRouter();
-    const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  
-    useEffect(() => {
-      console.log("isAuthenticated:", isAuthenticated);
-      if (isAuthenticated) router.replace("/feed");
-    }, [isAuthenticated, router]);
-  
-  
+  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
+
+  useEffect(() => {
+    console.log("isAuthenticated:", isAuthenticated);
+    if (isAuthenticated) router.replace("/feed");
+  }, [isAuthenticated, router]);
 
   return (
     <html
@@ -43,7 +39,9 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider>
+          <QueryProvider>{children}</QueryProvider>
+        </AuthProvider>
       </body>
     </html>
   );

@@ -1,4 +1,3 @@
-
 "use client";
 
 import { useEffect, useState } from "react";
@@ -12,12 +11,17 @@ import { DMWindow } from "@/components/chats/DMWindow";
 export default function ChatPage() {
   const { userId } = useParams<{ userId: string }>();
 
-  const [fetchedUser, setFetchedUser] =
-    useState<PublicUserProfile | null>(null);
-
-  const inboxUser = useChatStore((s) =>
-    s.inbox.find((item) => item.otherUser.id === userId)?.otherUser
+  const [fetchedUser, setFetchedUser] = useState<PublicUserProfile | null>(
+    null,
   );
+
+  const inboxUser = useChatStore((s) => {
+    const item = s.inbox.find(
+      (item) => item.type === "dm" && item.otherUser.id === userId,
+    );
+
+    return item?.type === "dm" ? item.otherUser : undefined;
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -45,8 +49,7 @@ export default function ChatPage() {
     fetched?.username ??
     "Conversation";
 
-  const avatarUrl =
-    inboxUser?.avatarUrl ?? fetched?.avatarUrl ?? null;
+  const avatarUrl = inboxUser?.avatarUrl ?? fetched?.avatarUrl ?? null;
 
   return (
     <div className="mx-auto flex h-full min-h-0 w-full max-w-2xl flex-col overflow-hidden bg-[var(--surface)] text-[var(--text)] md:border-x md:border-[var(--border)]">
@@ -77,9 +80,7 @@ export default function ChatPage() {
             {name}
           </h1>
 
-          <p className="text-xs text-[var(--muted)]">
-            Direct message
-          </p>
+          <p className="text-xs text-[var(--muted)]">Direct message</p>
         </div>
       </header>
 
