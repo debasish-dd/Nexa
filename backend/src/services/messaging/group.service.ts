@@ -20,6 +20,9 @@ import {
     type Group,
     type GroupInboxRow,
     type GroupMember,
+    getDiscoverableGroupsForUser,
+    type DiscoverableGroupRow,
+
 } from "../../repositories/messaging/group.repository";
 import {
     addParticipant,
@@ -84,6 +87,25 @@ export interface GroupInboxResult {
 export interface GroupDetails extends GroupResult {
     myRole: ParticipantRole;
     members: GroupMember[];
+}
+
+export interface DiscoverableGroupResult {
+    conversationId: string;
+    name: string;
+    description: string | null;
+    groupProfile: string | null;
+    memberCount: number;
+    createdAt: Date;
+}
+
+export interface DiscoverableGroupsPage {
+    groups: DiscoverableGroupResult[];
+    pagination: {
+        limit: number;
+        offset: number;
+        hasMore: boolean;
+        nextOffset: number | null;
+    };
 }
 
 /* ---------- small helpers ---------- */
@@ -324,6 +346,61 @@ export const getGCByConversationId = async (
 
         return { ...toGroupResult(group), myRole, members };
     } catch (error) {
+        throw mapDbError(error);
+    }
+};
+
+export const getDiscoverableGroups = async (
+    userId: string,
+    limit = 20,
+    offset = 0,
+): Promise<DiscoverableGroupsPage> => {
+    try {
+        const safeLimit = Math.min(
+            Math.max(Math.trunc(limit) || 20, 1),
+            50,
+        );
+
+        const safeOffset =
+            Number.isSafeInteger(offset) && offset >= 0
+                ? offset
+                : 0;
+
+        // Fetch one extra row to determine whether another page exists.
+        const rows = await getDiscoverableGroupsForUser(
+            userId,
+            safeLimit + 1,
+            safeOffset,
+        );
+
+        const hasMore = rows.length > safeLimit;
+
+        const groups = rows
+            .slice(0, safeLimit)
+            .map((row: DiscoverableGroupRow): DiscoverableGroupResult => ({
+                conversationId: row.conversationId,
+                name: row.name,
+                description: row.description,
+                groupProfile: row.groupProfile
+                    ? resolveGroupAvatar(row.groupProfile)
+                    : null,
+                memberCount: row.memberCount,
+                createdAt: row.createdAt,
+            }));
+
+        return {
+            groups,
+            pagination: {
+                limit: safeLimit,
+                offset: safeOffset,
+                hasMore,
+                nextOffset: hasMore
+                    ? safeOffset + safeLimit
+                    : null,
+            },
+        };
+    } catch (error) {
+        
         throw mapDbError(error);
     }
 };

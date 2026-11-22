@@ -156,6 +156,76 @@ export const deleteGroup = asyncHandler(
         );
     },
 );
+export const getDiscoverableGroups = asyncHandler(
+    async (req: Request, res: Response) => {
+        const callerId = getCallerId(req);
+        
+
+        let limit = 20;
+        let offset = 0;
+
+        // Validate limit.
+        const rawLimit = req.query.limit;
+
+        if (rawLimit !== undefined) {
+            if (typeof rawLimit !== "string") {
+                throw new ApiError(400, "Invalid limit");
+            }
+
+            const parsedLimit = Number(rawLimit);
+
+            if (
+                !Number.isInteger(parsedLimit) ||
+                parsedLimit < 1 ||
+                parsedLimit > 50
+            ) {
+                throw new ApiError(
+                    400,
+                    "Limit must be an integer between 1 and 50",
+                );
+            }
+
+            limit = parsedLimit;
+        }
+
+        // Validate offset.
+        const rawOffset = req.query.offset;
+
+        if (rawOffset !== undefined) {
+            if (typeof rawOffset !== "string") {
+                throw new ApiError(400, "Invalid offset");
+            }
+
+            const parsedOffset = Number(rawOffset);
+
+            if (
+                !Number.isSafeInteger(parsedOffset) ||
+                parsedOffset < 0
+            ) {
+                throw new ApiError(
+                    400,
+                    "Offset must be a non-negative integer",
+                );
+            }
+
+            offset = parsedOffset;
+        }
+
+        const result = await groupService.getDiscoverableGroups(
+            callerId,
+            limit,
+            offset,
+        );
+
+        res.status(200).json(
+            new ApiResponse(
+                200,
+                "Discoverable groups fetched successfully",
+                result,
+            ),
+        );
+    },
+);
 
 /** POST /groups/:conversationId/members  body: { userId } */
 export const addMember = asyncHandler(

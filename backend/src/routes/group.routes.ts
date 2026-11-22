@@ -5,6 +5,7 @@ import {
     changeMemberRole,
     createGroup,
     deleteGroup,
+    getDiscoverableGroups,
     getGCByConversationId,
     getGroupInbox,
     removeMember,
@@ -19,6 +20,9 @@ router.post("/", createGroup);
 
 // Group inbox
 router.get("/conversations", getGroupInbox);
+
+// Discover communities (static route)
+router.get("/discoverable", getDiscoverableGroups);
 
 // Individual group details
 router.get("/:conversationId", getGCByConversationId);

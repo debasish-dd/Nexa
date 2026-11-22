@@ -43,6 +43,14 @@ export interface GroupInboxRow {
     unreadCount: number;
 }
 
+export interface DiscoverableGroupRow {
+    conversationId: string;
+    name: string;
+    description: string | null;
+    groupProfile: string | null;
+    memberCount: number;
+    createdAt: Date;
+}
 // Constants, not user input, so it is safe to splice them into the SQL below.
 const GROUP_COLUMNS = `
     id,
@@ -253,6 +261,61 @@ export const updateGroupFields = async (
     );
 
     return result.rows[0] ?? null;
+};
+
+export const getDiscoverableGroupsForUser = async (
+    userId: string,
+    limit: number,
+    offset: number,
+    executor: QueryExecutor = pool,
+): Promise<DiscoverableGroupRow[]> => {
+    const safeLimit = Math.min(
+        Math.max(Math.trunc(limit) || 20, 1),
+        51,
+    );
+
+    const safeOffset = Number.isSafeInteger(offset) && offset >= 0
+        ? offset
+        : 0;
+
+    const result = await executor.query<DiscoverableGroupRow>(
+        `
+        SELECT
+            g.conversation_id AS "conversationId",
+            g.name,
+            g.description,
+            g.group_profile AS "groupProfile",
+            g.created_at AS "createdAt",
+
+            (
+                SELECT COUNT(*)::int
+                FROM conversation_participants cp
+                WHERE cp.conversation_id = g.conversation_id
+            ) AS "memberCount"
+
+        FROM groups g
+
+        INNER JOIN conversations c
+            ON c.id = g.conversation_id
+            AND c.type = 'gc'
+
+        WHERE NOT EXISTS (
+            SELECT 1
+            FROM conversation_participants me
+            WHERE me.conversation_id = g.conversation_id
+                AND me.user_id = $1
+        )
+
+        ORDER BY
+            g.created_at DESC,
+            g.conversation_id DESC
+
+        LIMIT $2 OFFSET $3
+        `,
+        [userId, safeLimit, safeOffset],
+    );
+
+    return result.rows;
 };
 
 export const setGroupAdminId = async (
