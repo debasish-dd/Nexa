@@ -8,6 +8,7 @@ import {
   CommunitiesTabs,
   type CommunitiesTab,
 } from "@/components/communities/CommunitiesTabs";
+import { DiscoverTab } from "./DiscoverTab";
 
 export function CommunitiesView() {
   const searchParams = useSearchParams();
@@ -33,11 +34,7 @@ export function CommunitiesView() {
 
       {activeTab === "joined" && <JoinedTab />}
 
-      {activeTab === "discover" && (
-        <p className="p-8 text-center text-sm text-[var(--muted)]">
-          Discover goes here (Step 3).
-        </p>
-      )}
+      {activeTab === "discover" && <DiscoverTab />}
 
       <CreateGroupDialog open={creating} onClose={() => setCreating(false)} />
     </main>

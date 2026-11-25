@@ -6,6 +6,7 @@ import type {
   GroupInfo,
   GroupMember,
 } from "@/types/chat";
+import type { DiscoverablePage } from "@/types/community";
 
 // ⚠️ Paths are relative to /api/v1. Check that the group router is mounted at /groups.
 
@@ -101,5 +102,16 @@ export async function transferGroupAdmin(
     `/groups/${conversationId}/transfer-admin`,
     { userId }
   );
+  return res.data.data;
+}
+export async function getDiscoverableGroups(
+  offset = 0,
+  limit = 20,
+): Promise<DiscoverablePage> {
+  const res = await http.get<{ data: DiscoverablePage }>(
+    "/groups/discoverable",
+    { params: { limit, offset } },
+  );
+
   return res.data.data;
 }
