@@ -22,6 +22,7 @@ import {
     type GroupMember,
     getDiscoverableGroupsForUser,
     type DiscoverableGroupRow,
+    joinDiscoverableGroup as joinDiscoverableGroupRepository,
 
 } from "../../repositories/messaging/group.repository";
 import {
@@ -403,6 +404,22 @@ export const getDiscoverableGroups = async (
         
         throw mapDbError(error);
     }
+};
+
+export const joinDiscoverableGroup = async (
+    conversationId: string,
+    userId: string,
+) => {
+    const result = await joinDiscoverableGroupRepository(conversationId, userId);
+
+    if (result.status === "not_found") {
+        throw new ApiError(404, "Group not found");
+    }
+
+    return {
+        conversationId,
+        joined: result.status === "joined",
+    };
 };
 
 export const getGroupInbox = async (

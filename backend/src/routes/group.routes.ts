@@ -8,6 +8,7 @@ import {
     getDiscoverableGroups,
     getGCByConversationId,
     getGroupInbox,
+    joinGroup,
     removeMember,
     transferAdmin,
     updateGroup,
@@ -23,6 +24,7 @@ router.get("/conversations", getGroupInbox);
 
 // Discover communities (static route)
 router.get("/discoverable", getDiscoverableGroups);
+router.post("/:conversationId/join", joinGroup);
 
 // Individual group details
 router.get("/:conversationId", getGCByConversationId);

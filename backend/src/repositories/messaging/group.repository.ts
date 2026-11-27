@@ -1,10 +1,16 @@
 import type { Pool, PoolClient } from "pg";
 import { getPool } from "../../db/pool";
-import type { ParticipantRole } from "./participant.repository";
+import type { ConversationParticipant, ParticipantRole } from "./participant.repository";
 
 const pool = getPool();
 
 type QueryExecutor = Pool | PoolClient;
+
+export type JoinGroupResult =
+    | { status: "joined"; participant: ConversationParticipant }
+    | { status: "already_member" }
+    | { status: "not_found" };
+
 
 export interface Group {
     id: string;
@@ -226,6 +232,49 @@ export const getGroupInboxForUser = async (
     );
 
     return result.rows;
+};
+
+export const joinDiscoverableGroup = async (
+    conversationId: string,
+    userId: string,
+    executor: QueryExecutor = pool,
+): Promise<JoinGroupResult> => {
+    // One statement: the group must exist and be a 'gc', and if the user
+    // is already in it, ON CONFLICT silently skips the insert.
+    const inserted = await executor.query<ConversationParticipant>(
+        `
+        INSERT INTO conversation_participants (conversation_id, user_id, role)
+        SELECT g.conversation_id, $2::uuid, 'member'
+        FROM groups g
+        INNER JOIN conversations c
+            ON c.id = g.conversation_id
+            AND c.type = 'gc'
+        WHERE g.conversation_id = $1
+        ON CONFLICT (conversation_id, user_id) DO NOTHING
+        RETURNING
+            id,
+            conversation_id AS "conversationId",
+            user_id AS "userId",
+            joined_at AS "joinedAt",
+            role,
+            last_read_message_id AS "lastReadMessageId"
+        `,
+        [conversationId, userId],
+    );
+
+    const participant = inserted.rows[0];
+    if (participant) return { status: "joined", participant };
+
+    // No row came back: either the group doesn't exist, or the user was
+    // already in it. This second query tells the two cases apart.
+    const group = await executor.query(
+        `SELECT 1 FROM groups WHERE conversation_id = $1`,
+        [conversationId],
+    );
+
+    return group.rows.length > 0
+        ? { status: "already_member" }
+        : { status: "not_found" };
 };
 
 /**

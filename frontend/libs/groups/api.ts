@@ -115,3 +115,13 @@ export async function getDiscoverableGroups(
 
   return res.data.data;
 }
+
+export async function joinDiscoverableGroup(
+  conversationId: string,
+): Promise<{ conversationId: string; joined: boolean }> {
+  const res = await http.post<{
+    data: { conversationId: string; joined: boolean };
+  }>(`/groups/${conversationId}/join`);
+
+  return res.data.data;
+}

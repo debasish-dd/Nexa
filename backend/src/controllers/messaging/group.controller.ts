@@ -159,7 +159,7 @@ export const deleteGroup = asyncHandler(
 export const getDiscoverableGroups = asyncHandler(
     async (req: Request, res: Response) => {
         const callerId = getCallerId(req);
-        
+
 
         let limit = 20;
         let offset = 0;
@@ -226,6 +226,39 @@ export const getDiscoverableGroups = asyncHandler(
         );
     },
 );
+
+const UUID_RE =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export const joinGroup = asyncHandler(async (req: Request, res: Response) => {
+    const callerId = getCallerId(req);
+    const { conversationId } = req.params;
+
+    // A malformed id would make Postgres throw and turn into a 500.
+    if (!conversationId || !UUID_RE.test(conversationId)) {
+        throw new ApiError(404, "Group not found");
+    }
+
+    const result = await groupService.joinDiscoverableGroup(
+        conversationId,
+        callerId,
+    );
+
+    // Their open connections start receiving this group's live messages.
+    if (result.joined) {
+        joinConversationRoom(callerId, conversationId);
+    }
+
+    return res
+        .status(200)
+        .json(
+            new ApiResponse(
+                200,
+                result.joined ? "Joined group" : "Already a member",
+                result,
+            ),
+        );
+});
 
 /** POST /groups/:conversationId/members  body: { userId } */
 export const addMember = asyncHandler(
